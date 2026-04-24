@@ -161,43 +161,21 @@ function detectChords(noteList) {
   return results.filter(c => { if (seen.has(c.key)) return false; seen.add(c.key); return true; });
 }
 
-// After detecting all chords, merge those with identical pitch-class sets + same name + same root
-// into a single card that lists all voicings (note combos)
+// Merge only truly identical note combos (same actual notes + name + root)
+// Each distinct note combination stays as its own card.
+// This preserves C Minor {C3,Eb4,G4} vs {C4,Eb4,G4} vs {C3,C4,Eb4,G4} as separate cards.
 function mergeChords(chords) {
-  // Canonical key: sorted pitch classes + chord name + root pitch class
+  // Key = sorted actual note names + chord name + root name
   const groups = new Map();
   for (const c of chords) {
-    const pcs = [...new Set(c.notes.map(n => {
-      const note = HANDPAN.notes.find(x => x.name === n);
-      return note ? note.midi % 12 : 0;
-    }))].sort((a,b)=>a-b).join(",");
-    const mergeKey = pcs + "|" + c.name + "|" + (HANDPAN.notes.find(x=>x.name===c.root)?.midi%12 ?? 0);
+    const noteKey = c.notes.slice().sort().join(",");
+    const mergeKey = noteKey + "|" + c.name + "|" + c.root;
     if (!groups.has(mergeKey)) {
-      groups.set(mergeKey, { ...c, voicings: [c.notes], mergeKey });
-    } else {
-      const existing = groups.get(mergeKey);
-      // Add this voicing if not already present
-      const voicingStr = c.notes.slice().sort().join(",");
-      if (!existing.voicings.some(v => v.slice().sort().join(",") === voicingStr)) {
-        existing.voicings.push(c.notes);
-      }
+      groups.set(mergeKey, { ...c, voicings: [c.notes], mergeKey, key: mergeKey });
     }
+    // exact duplicates (same key) are just ignored
   }
-  // Return merged array; notes = union of all notes across voicings (sorted by midi)
-  return Array.from(groups.values()).map(g => {
-    const allNoteNames = [...new Set(g.voicings.flat())];
-    const sorted = allNoteNames.sort((a,b) => {
-      const ma = HANDPAN.notes.find(x=>x.name===a)?.midi ?? 0;
-      const mb = HANDPAN.notes.find(x=>x.name===b)?.midi ?? 0;
-      return ma - mb;
-    });
-    return {
-      ...g,
-      notes: sorted,          // all notes that appear in any voicing
-      voicings: g.voicings,   // list of specific note combinations
-      key: g.mergeKey,
-    };
-  });
+  return Array.from(groups.values());
 }
 
 const RAW_CHORDS   = detectChords(HANDPAN.notes);
@@ -480,7 +458,7 @@ function ChordCard({chord, isSelected, isRelated, dimmed, onClick}) {
         </div>
         <span style={{fontSize:8,color:acc+(isSelected?"cc":"66"),border:`1px solid ${acc}25`,
           borderRadius:3,padding:"1px 4px",flexShrink:0,fontFamily:FONT,letterSpacing:.5,marginLeft:4}}>
-          {chord.voicings.length>1?`${chord.voicings.length}×`:`${chord.noteCount}♩`}
+          {chord.noteCount}♩
         </span>
       </div>
 
@@ -495,12 +473,6 @@ function ChordCard({chord, isSelected, isRelated, dimmed, onClick}) {
         ))}
       </div>
 
-      {/* Voicing count hint */}
-      {chord.voicings.length>1&&(
-        <div style={{fontSize:8,color:acc+"55",marginTop:4,fontFamily:FONT}}>
-          {chord.voicings.length} voicings
-        </div>
-      )}
     </div>
   );
 }
@@ -555,7 +527,7 @@ export default function HandpanAtlas() {
     playChord(chord.notes);
   };
 
-  const showAll  = () => { setPanFiltering(false); setPanNotes([]); setActiveNotes([]); setSelectedKey(null); };
+  const showAll  = () => { setPanFiltering(false); setSelectedKey(null); };
   const clearAll = () => { setActiveNotes([]); setPanNotes([]); setPanFiltering(false); setSelectedKey(null); };
   const clearFilters = () => setFilters({noteCount:"all",cat:"all",note:"all",chordName:"all"});
 
