@@ -2025,113 +2025,204 @@ function HandpanBuilder({ open, onClose, onApply }) {
 
 
 // ── SavedChordsStrip ──────────────────────────────────────────
+const BPM = 60;
+const BEAT_SEC = 0.5; // half a second per beat
+const TIME_SIGS = [2, 3, 4, 5]; // beats per bar options
+
 function SavedChordsStrip({ chords, onChords, strum, freqMap, onPlay }) {
-  const [dragging, setDragging] = useState(null); // index being dragged
-  const [dragOver, setDragOver] = useState(null); // index hovered over
-  const [overDelete, setOverDelete] = useState(false);
+  const [dragging,    setDragging]    = useState(null);
+  const [dragOver,    setDragOver]    = useState(null);
+  const [overDelete,  setOverDelete]  = useState(false);
   const [playingProg, setPlayingProg] = useState(false);
-  const progTimer = useRef(null);
+  const [timeSigIdx,  setTimeSigIdx]  = useState(2); // default index 2 = 4/4
+  const progTimer  = useRef(null);
+  const containerRef = useRef(null);
+  const pointerItem  = useRef(null);
+  const [ghostPos,    setGhostPos]   = useState(null);
 
-  function startDrag(i, e) {
-    e.preventDefault();
-    setDragging(i);
-  }
-  function onDragEnter(i) { setDragOver(i); setOverDelete(false); }
-  function onDragEnd() {
-    if(overDelete && dragging!=null) {
-      const updated = chords.filter((_,i)=>i!==dragging);
-      onChords(updated);
-      try { localStorage.setItem("hp_saved_chords", JSON.stringify(updated)); } catch(e){}
-    } else if(dragging!=null && dragOver!=null && dragging!==dragOver) {
-      const arr=[...chords];
-      const [removed]=arr.splice(dragging,1);
-      arr.splice(dragOver,0,removed);
-      onChords(arr);
-      try { localStorage.setItem("hp_saved_chords", JSON.stringify(arr)); } catch(e){}
-    }
-    setDragging(null); setDragOver(null); setOverDelete(false);
+  const beatsPerBar = TIME_SIGS[timeSigIdx];
+
+  function cycleTimeSig() {
+    setTimeSigIdx(i => (i + 1) % TIME_SIGS.length);
   }
 
+  // ── BPM-synced progression ──────────────────────────────────
   function playProgression() {
-    if(playingProg) { clearTimeout(progTimer.current); setPlayingProg(false); return; }
+    if(playingProg) {
+      clearTimeout(progTimer.current);
+      setPlayingProg(false);
+      return;
+    }
     setPlayingProg(true);
-    const STAGGER = 0.26;
 
     function playLoop() {
-      let startTime = 0;
+      let beatOffset = 0;
       chords.forEach(c => {
-        const delay = Math.round(startTime * 1000);
-        setTimeout(() => { playChord(c.notes, strum, freqMap); }, delay);
-        startTime += (c.notes.length - 1) * STAGGER + STAGGER;
+        const notesInChord = c.notes.length;
+        if(strum) {
+          c.notes.forEach((_, ni) => {
+            const delaySec = (beatOffset + ni) * BEAT_SEC;
+            setTimeout(() => {
+              const f = freqMap[c.notes[ni]];
+              if(f) { const ctx=getCtx(); synthNote(f, ctx.currentTime, ctx, 0.55); }
+            }, Math.round(delaySec * 1000));
+          });
+        } else {
+          const delaySec = beatOffset * BEAT_SEC;
+          setTimeout(() => { playChord(c.notes, false, freqMap); },
+            Math.round(delaySec * 1000));
+        }
+        const barsNeeded = Math.ceil(notesInChord / beatsPerBar);
+        beatOffset += barsNeeded * beatsPerBar;
       });
-      // Loop: schedule next iteration after all chords finish
-      progTimer.current = setTimeout(playLoop, Math.round(startTime * 1000));
+      progTimer.current = setTimeout(playLoop, Math.round(beatOffset * BEAT_SEC * 1000));
     }
 
     playLoop();
   }
 
+  // ── Pointer-event drag (works on mobile + desktop) ──────────
+  function onPointerDown(e, i) {
+    e.preventDefault();
+    pointerItem.current = { index: i, startX: e.clientX, startY: e.clientY, moved: false };
+    setDragging(i);
+    // Disable body scroll while dragging
+    document.body.style.overflow = "hidden";
+    setGhostPos({ x: e.clientX, y: e.clientY });
+  }
+
+  useEffect(() => {
+    function onPointerMove(e) {
+      if(pointerItem.current == null) return;
+      const dx = e.clientX - pointerItem.current.startX;
+      const dy = e.clientY - pointerItem.current.startY;
+      if(Math.abs(dx) > 4 || Math.abs(dy) > 4) pointerItem.current.moved = true;
+      setGhostPos({ x: e.clientX, y: e.clientY });
+
+      // Detect which chord chip is under the pointer
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const chip = el?.closest("[data-chord-idx]");
+      if(chip) {
+        const idx = parseInt(chip.getAttribute("data-chord-idx"));
+        if(!isNaN(idx) && idx !== pointerItem.current.index) {
+          setDragOver(idx); setOverDelete(false);
+        }
+      }
+      // Detect delete zone
+      const delZone = el?.closest("[data-delete-zone]");
+      if(delZone) { setOverDelete(true); setDragOver(null); }
+      else if(!chip) { setOverDelete(false); }
+    }
+
+    function onPointerUp(e) {
+      if(pointerItem.current == null) return;
+      document.body.style.overflow = "";
+
+      if(!pointerItem.current.moved) {
+        // Tap — play the chord
+        const idx = pointerItem.current.index;
+        if(chords[idx]) onPlay(chords[idx].notes);
+      } else if(overDelete) {
+        const updated = chords.filter((_,i)=>i!==pointerItem.current.index);
+        onChords(updated);
+        try { localStorage.setItem("hp_saved_chords", JSON.stringify(updated)); } catch(err){}
+      } else if(dragOver != null && dragOver !== pointerItem.current.index) {
+        const arr = [...chords];
+        const [removed] = arr.splice(pointerItem.current.index, 1);
+        arr.splice(dragOver, 0, removed);
+        onChords(arr);
+        try { localStorage.setItem("hp_saved_chords", JSON.stringify(arr)); } catch(err){}
+      }
+
+      pointerItem.current = null;
+      setDragging(null); setDragOver(null); setOverDelete(false); setGhostPos(null);
+    }
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup",   onPointerUp);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup",   onPointerUp);
+    };
+  }, [chords, dragOver, overDelete, onChords, onPlay]);
+
   return (
-    <div style={{padding:"8px 0 0",userSelect:"none",WebkitUserSelect:"none"}}>
+    <div ref={containerRef} style={{padding:"8px 0 0",userSelect:"none",WebkitUserSelect:"none",touchAction:"none"}}>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
         <span style={{fontSize:8,color:"#5a4a28",letterSpacing:3,textTransform:"uppercase",flexShrink:0}}>Saved</span>
+
         {chords.map((c,i)=>(
           <div key={c.key}
-            draggable
-            onDragStart={e=>startDrag(i,e)}
-            onDragEnter={()=>onDragEnter(i)}
-            onDragOver={e=>e.preventDefault()}
-            onDragEnd={onDragEnd}
-            onClick={()=>onPlay(c.notes)}
+            data-chord-idx={i}
+            onPointerDown={e=>onPointerDown(e,i)}
             style={{
               display:"flex",gap:3,alignItems:"center",
-              background:dragging===i?"rgba(160,120,200,0.30)":dragOver===i?"rgba(160,120,200,0.22)":"rgba(160,120,200,0.12)",
-              border:`1px solid ${dragging===i?"rgba(160,120,200,0.70)":"rgba(160,120,200,0.30)"}`,
-              color:"#c0a0e0",borderRadius:7,padding:"3px 8px",cursor:"grab",
-              fontSize:10,fontFamily:"monospace",
-              opacity:dragging===i?0.5:1,
-              transform:dragOver===i&&dragging!==i?"translateY(-2px)":"none",
-              transition:"transform .1s",
+              background:dragging===i?"rgba(160,120,200,0.35)":dragOver===i?"rgba(160,120,200,0.28)":"rgba(160,120,200,0.12)",
+              border:`1px solid ${dragging===i?"rgba(160,120,200,0.80)":dragOver===i?"rgba(160,120,200,0.60)":"rgba(160,120,200,0.30)"}`,
+              color:"#c0a0e0",borderRadius:7,padding:"4px 9px",cursor:"grab",
+              fontSize:10,fontFamily:"monospace",touchAction:"none",
+              opacity:dragging===i?0.45:1,
+              transform:dragOver===i&&dragging!==i?"scale(1.06)":"none",
+              transition:"transform .1s, opacity .1s",
             }}>
-            <span style={{fontSize:8,opacity:.4,cursor:"grab"}}>⠿</span>
+            <span style={{fontSize:9,opacity:.35,marginRight:1}}>⠿</span>
             {c.notes.map(n=>n.replace("b","♭")).join(" ")}
           </div>
         ))}
 
-        {/* Delete zone — appears while dragging */}
+        {/* Delete zone — always visible when dragging */}
         {dragging!=null&&(
-          <div
-            onDragEnter={()=>{setOverDelete(true);setDragOver(null);}}
-            onDragOver={e=>e.preventDefault()}
-            onDragLeave={()=>setOverDelete(false)}
-            style={{
-              padding:"3px 10px",borderRadius:6,fontSize:9,fontFamily:FONT,
-              background:overDelete?"rgba(180,60,60,0.35)":"rgba(140,45,45,0.12)",
-              border:`1px dashed ${overDelete?"rgba(220,80,80,0.8)":"rgba(140,45,45,0.35)"}`,
-              color:overDelete?"#ff8080":"#a85858",
-              transition:"all .15s",
-            }}>
-            🗑 Drop to delete
-          </div>
+          <div data-delete-zone="1" style={{
+            padding:"4px 10px",borderRadius:6,fontSize:9,fontFamily:FONT,
+            background:overDelete?"rgba(200,60,60,0.35)":"rgba(140,45,45,0.10)",
+            border:`1px dashed ${overDelete?"rgba(240,80,80,0.9)":"rgba(160,55,55,0.40)"}`,
+            color:overDelete?"#ff9090":"#a85858",
+            transition:"all .15s",
+          }}>🗑 Drop to delete</div>
         )}
 
-        {/* Progression play button — only when ≥2 chords */}
+        {/* Progression play — ≥2 chords and not dragging */}
         {chords.length>=2&&dragging==null&&(
-          <button onClick={playProgression} style={{
-            background:playingProg?"rgba(205,163,83,0.30)":"rgba(205,163,83,0.12)",
-            border:`1px solid rgba(205,163,83,${playingProg?".70":".35"})`,
-            color:playingProg?"#f0d078":"#c9a84c",
-            borderRadius:6,padding:"3px 10px",cursor:"pointer",
-            fontSize:9,fontFamily:FONT,flexShrink:0,
-          }}>{playingProg?"◼ Stop":"▶▶ Play all"}</button>
+          <>
+            <button onClick={cycleTimeSig} title="Change time signature" style={{
+              background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)",
+              color:"#a09070",borderRadius:6,padding:"3px 9px",cursor:"pointer",
+              fontSize:9,fontFamily:FONT,flexShrink:0,touchAction:"manipulation",
+              fontVariantNumeric:"tabular-nums",letterSpacing:.5,
+            }}>{TIME_SIGS[timeSigIdx]}/4</button>
+            <button onClick={playProgression} style={{
+              background:playingProg?"rgba(205,163,83,0.30)":"rgba(205,163,83,0.12)",
+              border:`1px solid rgba(205,163,83,${playingProg?".70":".35"})`,
+              color:playingProg?"#f0d078":"#c9a84c",
+              borderRadius:6,padding:"3px 10px",cursor:"pointer",
+              fontSize:9,fontFamily:FONT,flexShrink:0,touchAction:"manipulation",
+            }}>{playingProg?"◼ Stop":"▶▶ Play all"}</button>
+          </>
         )}
 
-        <button onClick={()=>{onChords([]);try{localStorage.removeItem("hp_saved_chords");}catch(e){}}} style={{
+        <button onClick={()=>{
+          clearTimeout(progTimer.current); setPlayingProg(false);
+          onChords([]);
+          try{localStorage.removeItem("hp_saved_chords");}catch(e){}
+        }} style={{
           background:"rgba(140,45,45,0.12)",border:"1px solid rgba(140,45,45,0.25)",
           color:"#a85858",borderRadius:6,padding:"3px 8px",cursor:"pointer",
-          fontSize:9,fontFamily:FONT,
+          fontSize:9,fontFamily:FONT,touchAction:"manipulation",
         }}>↺ Clear</button>
       </div>
+
+      {/* Drag ghost */}
+      {dragging!=null&&ghostPos&&(
+        <div style={{
+          position:"fixed",pointerEvents:"none",zIndex:9999,
+          left:ghostPos.x+10,top:ghostPos.y-14,
+          background:"rgba(160,120,200,0.90)",borderRadius:7,
+          padding:"4px 9px",fontSize:10,fontFamily:"monospace",color:"#fff",
+          boxShadow:"0 4px 16px rgba(0,0,0,0.5)",
+        }}>
+          {chords[dragging]?.notes.map(n=>n.replace("b","♭")).join(" ")}
+        </div>
+      )}
     </div>
   );
 }
@@ -2202,10 +2293,11 @@ export default function HandpanAtlas() {
   });
 
   function saveChord() {
-    if(activeNotes.length===0) return;
-    const key = [...activeNotes].sort().join("|");
-    if(savedChords.some(c=>c.key===key)) return; // no duplicates
-    const newChords = [...savedChords, { key, notes:[...activeNotes] }];
+    const notes = activeNotes.length > 0 ? activeNotes : cardHighlightNotes;
+    if(notes.length === 0) return;
+    const key = [...notes].sort().join("|");
+    if(savedChords.some(c=>c.key===key)) return;
+    const newChords = [...savedChords, { key, notes:[...notes] }];
     setSavedChords(newChords);
     try { localStorage.setItem("hp_saved_chords", JSON.stringify(newChords)); } catch(e){}
   }
@@ -2625,15 +2717,15 @@ export default function HandpanAtlas() {
 
             {/* Play button */}
             <button
-              onClick={()=>{ if(activeNotes.length>0) playChord(activeNotes, strum, currentPan.freq); }}
-              disabled={activeNotes.length===0}
+              onClick={()=>{ const n=activeNotes.length>0?activeNotes:cardHighlightNotes; if(n.length>0) playChord(n, strum, currentPan.freq); }}
+              disabled={activeNotes.length===0&&cardHighlightNotes.length===0}
               style={{
                 display:"flex",alignItems:"center",gap:5,
-                background:activeNotes.length>0?"rgba(100,180,120,0.18)":"rgba(255,255,255,0.03)",
-                border:`1px solid ${activeNotes.length>0?"rgba(100,200,130,0.40)":"rgba(255,255,255,0.07)"}`,
-                color:activeNotes.length>0?"#80d090":"#3a3a30",
+                background:(activeNotes.length>0||cardHighlightNotes.length>0)?"rgba(100,180,120,0.18)":"rgba(255,255,255,0.03)",
+                border:`1px solid ${(activeNotes.length>0||cardHighlightNotes.length>0)?"rgba(100,200,130,0.40)":"rgba(255,255,255,0.07)"}`,
+                color:(activeNotes.length>0||cardHighlightNotes.length>0)?"#80d090":"#3a3a30",
                 borderRadius:8,padding:"6px 13px",
-                cursor:activeNotes.length>0?"pointer":"default",
+                cursor:(activeNotes.length>0||cardHighlightNotes.length>0)?"pointer":"default",
                 fontSize:12,fontFamily:FONT,transition:"all .15s",whiteSpace:"nowrap",
               }}>
               <span style={{fontSize:14,lineHeight:1}}>▶</span>
@@ -2643,12 +2735,12 @@ export default function HandpanAtlas() {
             {/* Save Chord */}
             <button
               onClick={saveChord}
-              disabled={activeNotes.length===0}
+              disabled={activeNotes.length===0&&cardHighlightNotes.length===0}
               style={{
                 display:"flex",alignItems:"center",gap:5,
-                background:activeNotes.length>0?"rgba(160,120,200,0.18)":"rgba(255,255,255,0.03)",
-                border:`1px solid ${activeNotes.length>0?"rgba(160,120,200,0.40)":"rgba(255,255,255,0.07)"}`,
-                color:activeNotes.length>0?"#c0a0e0":"#3a3a30",
+                background:(activeNotes.length>0||cardHighlightNotes.length>0)?"rgba(160,120,200,0.18)":"rgba(255,255,255,0.03)",
+                border:`1px solid ${(activeNotes.length>0||cardHighlightNotes.length>0)?"rgba(160,120,200,0.40)":"rgba(255,255,255,0.07)"}`,
+                color:(activeNotes.length>0||cardHighlightNotes.length>0)?"#c0a0e0":"#3a3a30",
                 borderRadius:8,padding:"6px 11px",
                 cursor:activeNotes.length>0?"pointer":"default",
                 fontSize:11,fontFamily:FONT,whiteSpace:"nowrap",
