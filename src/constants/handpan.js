@@ -29,6 +29,25 @@ export const STANDARD_PANS = [
     rings:{ upper:[{count:8,rotation:0}], bottom:[{count:6,rotation:0}] },
     sided:"single",
   },
+  {
+    id:"d_kurd", "name":"D kurd · 432Hz",
+    "a4":432,
+    "notes":[
+      {"name":"D3","midi":50,"pos":"ding","angle":null,"ringIdx":null,"size":"big-ding","side":"upper"},
+      {"name":"A3","midi":57,"pos":"ring","angle":157,"ringIdx":0,"size":"big","side":"upper"},
+      {"name":"Bb3","midi":58,"pos":"ring","angle":202,"ringIdx":0,"size":"big","side":"upper"},
+      {"name":"C4","midi":60,"pos":"ring","angle":247,"ringIdx":0,"size":"big","side":"upper"},
+      {"name":"D4","midi":62,"pos":"ring","angle":112,"ringIdx":0,"size":"big","side":"upper"},
+      {"name":"E4","midi":64,"pos":"ring","angle":67,"ringIdx":0,"size":"big","side":"upper"},
+      {"name":"F4","midi":65,"pos":"ring","angle":292,"ringIdx":0,"size":"big","side":"upper"},
+      {"name":"G4","midi":67,"pos":"ring","angle":337,"ringIdx":0,"size":"big","side":"upper"},
+      {"name":"A4","midi":69,"pos":"ring","angle":22,"ringIdx":0,"size":"big","side":"upper"}],
+      "freq":{"D3":144.1627042503637,"A3":216,"Bb3":228.84402838160779,"C4":256.86873684058776,"D4":288.3254085007274,"E4":323.6343286053632,"F4":342.8786272251311,"G4":384.8682462366266,"A4":432},
+      "positions":{"C4":"247:0:upper","D3":"ding:0:upper","A3":"157:0:upper","Bb3":"202:0:upper","D4":"112:0:upper","E4":"67:0:upper","F4":"292:0:upper","G4":"337:0:upper","A4":"22:0:upper"},
+      "rings":{"upper":[{"count":8,"rotation":-23}],"bottom":[{"count":6,"rotation":0}]},
+      "sided":"single"
+      }
+
   // Add more standard pans here:
   // { id:"d_minor", name:"D Minor · 440Hz", a4:440, notes:[...], positions:{...}, rings:{...}, sided:"single" },
 ];

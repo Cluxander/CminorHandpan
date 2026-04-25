@@ -33,7 +33,7 @@ export default function HandpanAtlas() {
   const [selectedKey,  setSelectedKey]  = useState(null);
 
   const [builderOpen,  setBuilderOpen]  = useState(false);
-  const [headerHeight, setHeaderHeight] = useState(0);
+  const stickyPanRef = useRef(null);
 
   const [savedChords, setSavedChords] = useState(() => {
     try { return JSON.parse(localStorage.getItem("hp_saved_chords") || "[]"); } catch(e) { return []; }
@@ -205,10 +205,10 @@ export default function HandpanAtlas() {
   return (
     <div style={{ minHeight:"100vh",background:"#0a0906",color:"#d4c8a8",fontFamily:FONT,WebkitTextSizeAdjust:"100%" }}>
 
-      <StickyHeader onHeight={h => setHeaderHeight(h)}/>
+      <StickyHeader onHeight={h => { if (stickyPanRef.current) stickyPanRef.current.style.top = h + "px"; }}/>
 
       {/* Sticky handpan */}
-      <div style={{ position:"sticky",top:headerHeight||0,zIndex:99,background:"rgba(8,7,4,0.97)",borderBottom:"1px solid rgba(205,163,83,0.15)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",padding:"10px 12px 10px",userSelect:"none",WebkitUserSelect:"none" }}>
+      <div ref={stickyPanRef} style={{ position:"sticky",top:0,zIndex:99,background:"rgba(8,7,4,0.97)",borderBottom:"1px solid rgba(205,163,83,0.15)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",padding:"10px 12px 10px",userSelect:"none",WebkitUserSelect:"none" }}>
         <div style={{ maxWidth:600,margin:"0 auto",display:"flex",flexDirection:"column",alignItems:"center",gap:5 }}>
           {/* Top row */}
           <div style={{ width:"100%",display:"flex",alignItems:"stretch",gap:8,height:30 }}>
