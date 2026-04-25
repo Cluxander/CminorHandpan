@@ -2047,22 +2047,32 @@ function SavedChordsStrip({ chords, onChords, strum, freqMap, onPlay, onProgHigh
   }
 
   // ── BPM-synced progression ──────────────────────────────────
-  const stoppedRef = useRef(false);
-  const loopIdRef  = useRef(0); // incremented on each start — stale callbacks bail out
+  const loopIdRef  = useRef(0);
+  const allTimers  = useRef([]); // every queued timeout — cancel all on stop
+
+  function cancelAll() {
+    allTimers.current.forEach(id => clearTimeout(id));
+    allTimers.current = [];
+  }
+
+  function sched(fn, delayMs) {
+    const id = setTimeout(fn, delayMs);
+    allTimers.current.push(id);
+    return id;
+  }
 
   function playProgression() {
     if(playingProg) {
-      stoppedRef.current = true;
-      loopIdRef.current++;          // invalidate ALL pending note callbacks instantly
-      clearTimeout(progTimer.current);
+      loopIdRef.current++;
+      cancelAll();
       setPlayingProg(false);
       onProgHighlight&&onProgHighlight(null);
       return;
     }
-    stoppedRef.current = false;
-    loopIdRef.current++;            // new session id
+    cancelAll();
+    loopIdRef.current++;
+    const myId = loopIdRef.current;
     setPlayingProg(true);
-    const myId = loopIdRef.current; // captured — all callbacks check this
 
     function playLoop() {
       if(loopIdRef.current !== myId) return;
@@ -2071,26 +2081,23 @@ function SavedChordsStrip({ chords, onChords, strum, freqMap, onPlay, onProgHigh
         const notesInChord = c.notes.length;
         if(strum) {
           c.notes.forEach((note, ni) => {
-            const delayMs = Math.round((beatOffset + ni) * BEAT_SEC * 1000);
-            setTimeout(() => {
+            sched(() => {
               if(loopIdRef.current !== myId) return;
               const f = freqMap[note];
               if(f) { const ctx=getCtx(); synthNote(f, ctx.currentTime, ctx, 0.55); }
               onProgHighlight&&onProgHighlight([note]);
-            }, delayMs);
+            }, Math.round((beatOffset + ni) * BEAT_SEC * 1000));
           });
         } else {
-          const delayMs = Math.round(beatOffset * BEAT_SEC * 1000);
-          setTimeout(() => {
+          sched(() => {
             if(loopIdRef.current !== myId) return;
             playChord(c.notes, false, freqMap);
             onProgHighlight&&onProgHighlight(c.notes);
-          }, delayMs);
+          }, Math.round(beatOffset * BEAT_SEC * 1000));
         }
-        const barsNeeded = Math.ceil(notesInChord / beatsPerBar);
-        beatOffset += barsNeeded * beatsPerBar;
+        beatOffset += Math.ceil(notesInChord / beatsPerBar) * beatsPerBar;
       });
-      progTimer.current = setTimeout(() => {
+      sched(() => {
         if(loopIdRef.current === myId) playLoop();
       }, Math.round(beatOffset * BEAT_SEC * 1000));
     }
