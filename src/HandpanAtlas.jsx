@@ -461,8 +461,8 @@ function playNote(name) {
 }
 
 function playChord(notes, strum = true, freqMap) {
-  // Fixed stagger of 0.13s per note when strumming (same feel regardless of chord size)
-  const stagger = strum ? 0.13 : 0;
+  // Fixed stagger of 0.26s per note when strumming
+  const stagger = strum ? 0.26 : 0;
   const ctx = getCtx(), now = ctx.currentTime;
   const noteVol = Math.max(0.45, 0.80 - notes.length * 0.06);
   notes.forEach((n, i) => {
@@ -2050,11 +2050,16 @@ function SavedChordsStrip({ chords, onChords, strum, freqMap, onPlay }) {
   function playProgression() {
     if(playingProg) { clearTimeout(progTimer.current); setPlayingProg(false); return; }
     setPlayingProg(true);
+    const STAGGER = 0.26; // same as strum stagger
+    let startTime = 0;
     chords.forEach((c,i)=>{
+      const delay = Math.round(startTime * 1000);
       progTimer.current = setTimeout(()=>{
         playChord(c.notes, strum, freqMap);
         if(i===chords.length-1) setTimeout(()=>setPlayingProg(false), 2000);
-      }, i*1500);
+      }, delay);
+      // Next chord starts after all notes of this chord + one stagger gap
+      startTime += (c.notes.length - 1) * STAGGER + STAGGER;
     });
   }
 
