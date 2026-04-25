@@ -442,15 +442,12 @@ async function playNoteAsync(freq, t, ctx, vol) {
 }
 
 function synthNote(freq, t, ctx, vol) {
-  // Fire and forget — load sample if not ready
   const sampleKey = closestSample(freq);
   if (_buffers[sampleKey]) {
-    // Buffer ready — play synchronously via internal async (but buffer already loaded)
     playNoteAsync(freq, t, ctx, vol);
   } else {
-    // Buffer not yet loaded — schedule via promise
     loadBuffer(sampleKey).then(() => {
-      if (ctx.state !== "closed") playNoteAsync(freq, ctx.currentTime + 0.05, ctx, vol);
+      if (ctx.state !== "closed") playNoteAsync(freq, ctx.currentTime + 0.01, ctx, vol);
     });
   }
 }
@@ -1460,16 +1457,24 @@ function HandpanBuilder({ open, onClose, onApply }) {
       const sideNotesOnRing=buildNotes.filter(n=>n.side===targetSide&&(n.ringIdx??0)===ri&&n.angle!=null);
       const usedAngles=sideNotesOnRing.map(n=>n.angle||0);
       const halfSlot=360/ring.count/2;
-      // Order slots: lower first, LEFT side before right at each level
-      const orderedSlots=[...slots].sort((a,b)=>{
-        // Distance from bottom (180°): lower = larger dist from top
-        const distA=Math.abs(((a-180+360)%360)-180);
-        const distB=Math.abs(((b-180+360)%360)-180);
-        if(Math.abs(distA-distB)>halfSlot*0.5) return distB-distA; // lower first
-        // Same level: left side (180–270°) before right (90–180°)
-        const aLeft=(a>180&&a<270);
-        return aLeft?-1:1;
+      // Build strictly alternating order: bottom-left, bottom-right, next-left, next-right...
+      const byDist=[...slots].sort((a,b)=>{
+        const da=Math.abs(((a-180+360)%360)-180);
+        const db=Math.abs(((b-180+360)%360)-180);
+        return db-da; // lower first
       });
+      // Left = 181–359°, Right = 1–179°, special = 0° (top) and 180° (bottom)
+      const leftSlots =byDist.filter(a=>a>180&&a<360);
+      const rightSlots=byDist.filter(a=>a>0  &&a<180);
+      const orderedSlots=[];
+      const maxLen=Math.max(leftSlots.length,rightSlots.length);
+      for(let k=0;k<maxLen;k++){
+        if(k<leftSlots.length)  orderedSlots.push(leftSlots[k]);
+        if(k<rightSlots.length) orderedSlots.push(rightSlots[k]);
+      }
+      // Exact bottom (180°) and top (0°/360°) go at start/end
+      if(byDist.includes(180)) orderedSlots.unshift(180);
+      if(byDist.includes(0))   orderedSlots.push(0);
       const freeSlot=orderedSlots.find(a=>!usedAngles.some(ua=>Math.abs(((ua-a+540)%360)-180)<halfSlot));
       if(freeSlot===undefined){ alert(`Ring ${ri+1} is full. Remove a note or add another ring.`); return; }
       angle=freeSlot; ringIdx=ri;
@@ -2050,17 +2055,20 @@ function SavedChordsStrip({ chords, onChords, strum, freqMap, onPlay }) {
   function playProgression() {
     if(playingProg) { clearTimeout(progTimer.current); setPlayingProg(false); return; }
     setPlayingProg(true);
-    const STAGGER = 0.26; // same as strum stagger
-    let startTime = 0;
-    chords.forEach((c,i)=>{
-      const delay = Math.round(startTime * 1000);
-      progTimer.current = setTimeout(()=>{
-        playChord(c.notes, strum, freqMap);
-        if(i===chords.length-1) setTimeout(()=>setPlayingProg(false), 2000);
-      }, delay);
-      // Next chord starts after all notes of this chord + one stagger gap
-      startTime += (c.notes.length - 1) * STAGGER + STAGGER;
-    });
+    const STAGGER = 0.26;
+
+    function playLoop() {
+      let startTime = 0;
+      chords.forEach(c => {
+        const delay = Math.round(startTime * 1000);
+        setTimeout(() => { playChord(c.notes, strum, freqMap); }, delay);
+        startTime += (c.notes.length - 1) * STAGGER + STAGGER;
+      });
+      // Loop: schedule next iteration after all chords finish
+      progTimer.current = setTimeout(playLoop, Math.round(startTime * 1000));
+    }
+
+    playLoop();
   }
 
   return (
