@@ -64,11 +64,11 @@ export default function PreviewPan({ notes, positions, ringsUpper, ringsBottom, 
           stroke="rgba(140,110,45,0.30)" strokeWidth={1.5}/>
       )}
 
-      {notes.filter(n => !notePos(n).isDing).map(n => {
+      {/* {notes.filter(n => !notePos(n).isDing).map(n => {
         const { x, y } = notePos(n); const lit = activeNote === n.name;
         return <line key={n.name} x1={CX} y1={CY} x2={x} y2={y}
           stroke={lit ? colFn(n) + "55" : "rgba(205,163,83,0.05)"} strokeWidth={lit ? 1.5 : .8}/>;
-      })}
+      })} */}
 
       {[...notes.filter(n => !notePos(n).isDing), ...notes.filter(n => notePos(n).isDing)].map(n => {
         const { x, y, r, isDing, sizeDef } = notePos(n);
@@ -82,23 +82,23 @@ export default function PreviewPan({ notes, positions, ringsUpper, ringsBottom, 
             <circle cx={x} cy={y} r={r+2} fill="none"
               stroke={lit ? c+"55" : "rgba(180,140,55,0.12)"} strokeWidth={lit ? 1.5 : 1}/>
             <circle cx={x} cy={y} r={r}
-              fill={lit ? c+"35" : isDing ? "rgba(205,163,83,0.09)" : "rgba(20,17,8,0.90)"}
-              stroke={lit ? c : isDing ? "rgba(205,163,83,0.60)" : "rgba(140,110,45,0.25)"}
+              fill={lit ? c+"35" : "rgba(20, 17, 8, 0.75)"}
+              stroke={lit ? c : isDing ? "rgba(205,163,83,0.60)" : "rgba(140, 110, 45, 0.4)"}
               strokeWidth={lit ? 2.5 : 1.5}/>
-            <circle cx={x} cy={y} r={Math.max(r-6,4)} fill="none"
-              stroke={lit ? c+"44" : "rgba(205,163,83,0.05)"} strokeWidth={.8}/>
-            <text x={x} y={isDing ? y-(sizeDef.r>30?5:4) : y+1}
+            <circle cx={x} cy={y} r={r-r/3} fill="none"
+              stroke={lit ? c+"44" : "rgba(205, 162, 83, 0.28)"} strokeWidth={.8}/>
+            <text x={x-sizeDef.fontSize/3} y={y+sizeDef.fontSize/10}
               textAnchor="middle" dominantBaseline="middle"
               fontSize={sizeDef.fontSize} fontFamily={FONT} fontWeight="600"
               fill={lit ? c : isDing ? "#cda353" : "#9a8a60"}
               style={{ userSelect:"none", pointerEvents:"none" }}>{lbl}</text>
-            {oct && <text x={x} y={isDing ? y+(sizeDef.r>30?9:7) : y+r*0.55}
-              textAnchor="middle" fontSize={sizeDef.subFontSize} fontFamily={FONT} fontWeight="600"
-              fill={lit ? c+(isDing?"cc":"99") : isDing ? "#8a7040" : "#7a6840"}
+            {oct && <text x={x+sizeDef.fontSize/2} y={y+sizeDef.fontSize/3}
+              textAnchor="middle" fontSize={sizeDef.fontSize} fontFamily={FONT} fontWeight="600"
+              fill={lit ? c+(isDing?"cc":"99") : isDing ? "#d7a342" : "#7a6840"}
               style={{ userSelect:"none", pointerEvents:"none" }}>{oct}</text>}
-            {isDing && <text x={x} y={y+(oct?r*0.75:r*0.5)}
+            {isDing && <text x={x} y={y+(oct?r*0.75:r*0.5)-r/3}
               textAnchor="middle" fontSize={sizeDef.subFontSize-1} fontFamily={FONT} fontWeight="500"
-              fill={lit ? c+"cc" : "#5a4a28"}
+              fill={lit ? c+"cc" : "#d7a342"}
               style={{ userSelect:"none", pointerEvents:"none" }}>ding</text>}
           </g>
         );

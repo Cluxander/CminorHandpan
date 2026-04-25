@@ -293,7 +293,7 @@ export default function HandpanAtlas() {
                 </div>
               </>
             ) : (
-              <div style={{ fontSize:9.5,color:"#2e2610",letterSpacing:.5,fontFamily:FONT }}>Tap notes to build a chord · or browse below</div>
+              <div style={{ fontSize:9.5,color:"rgb(85, 79, 60)",letterSpacing:.5,fontFamily:FONT }}>Tap notes to build a chord · or browse below</div>
             )}
           </div>
         </div>

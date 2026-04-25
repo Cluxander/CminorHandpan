@@ -168,23 +168,23 @@ export default function BuilderCanvas({ notes, rings, onMove, onNoteClick, selec
               stroke={sel ? "rgba(205,163,83,0.65)" : drag || hov ? "rgba(205,163,83,0.30)" : "none"}
               strokeWidth={sel ? 1.5 : 1} strokeDasharray={sel ? "none" : "3 3"}/>
             <circle cx={x} cy={y} r={r}
-              fill={drag ? "rgba(205,163,83,0.28)" : sel ? "rgba(205,163,83,0.14)" : "rgba(20,17,8,0.90)"}
-              stroke={sel || drag ? "rgba(205,163,83,0.85)" : isDing ? "rgba(205,163,83,0.55)" : "rgba(140,110,45,0.28)"}
+              fill={drag ? "rgba(205,163,83,0.28)" : sel ? "rgba(205,163,83,0.14)" : "rgba(20, 17, 8, 0.75)"}
+              stroke={sel || drag ? "rgba(205,163,83,0.85)" : isDing ? "rgba(205,163,83,0.55)" : "rgba(140, 110, 45, 0.4)"}
               strokeWidth={sel ? 2 : 1.5}/>
-            <circle cx={x} cy={y} r={Math.max(r-6,4)} fill="none"
-              stroke="rgba(205,163,83,0.06)" strokeWidth={.8}/>
-            <text x={x} y={isDing ? y-(sizeDef.r>30?5:4) : y+1}
+            <circle cx={x} cy={y} r={r-r/3} fill="none"
+              stroke="rgba(205, 162, 83, 0.28)" strokeWidth={.8}/>
+            <text x={x-sizeDef.fontSize/3} y={y+sizeDef.fontSize/10}
               textAnchor="middle" dominantBaseline="middle"
               fontSize={sizeDef.fontSize} fontFamily={FONT} fontWeight="600"
               fill={sel ? "#e8c97a" : isDing ? "#cda353" : "#9a8a60"}
               style={{ userSelect:"none", pointerEvents:"none" }}>{lbl}</text>
-            {oct && <text x={x} y={isDing ? y+(sizeDef.r>30?9:7) : y+r*0.55}
-              textAnchor="middle" fontSize={sizeDef.subFontSize} fontFamily={FONT} fontWeight="600"
+            {oct && <text x={x+sizeDef.fontSize/2} y={y+sizeDef.fontSize/3}
+              textAnchor="middle" fontSize={sizeDef.fontSize} fontFamily={FONT} fontWeight="600"
               fill={sel ? "#c8a050" : isDing ? "#7a6030" : "#6a5838"}
               style={{ userSelect:"none", pointerEvents:"none" }}>{oct}</text>}
-            {isDing && <text x={x} y={y+(oct?r*0.75:r*0.5)}
+            {isDing && <text x={x} y={y+(oct?r*0.75:r*0.5)-r/3}
               textAnchor="middle" fontSize={sizeDef.subFontSize-1} fontFamily={FONT} fontWeight="500"
-              fill={sel ? "#b09040" : "#5a4a28"}
+              fill={sel ? "#b09040" : "#6a5838"}
               style={{ userSelect:"none", pointerEvents:"none" }}>ding</text>}
           </g>
         );

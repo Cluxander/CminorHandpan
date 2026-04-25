@@ -316,14 +316,14 @@ export default function HandpanBuilder({ open, onClose, onApply }) {
                       return (
                         <>
                           <div style={{ display:"flex",gap:4,justifyContent:"center",marginBottom:12,alignItems:"flex-start",width:"100%",overflow:"hidden" }}>
-                            <div style={{ flex:isDouble?"1 1 0":"0 0 auto",minWidth:0,textAlign:"center" }}>
+                            <div style={{ flex:isDouble?"1 1 0":"0 0 auto",minWidth:0,textAlign:"center",maxWidth:"270px" }}>
                               {isDouble && <div style={{ fontSize:8,color:"#5a4a28",letterSpacing:2,textTransform:"uppercase",marginBottom:4 }}>Upper</div>}
                               <PreviewPan notes={upper} positions={pan.positions||{}}
                                 ringsUpper={panRingsUpper} ringsBottom={panRingsBottom}
                                 activeNote={previewNote} onNote={n => previewTap(n, pan.a4||440)} size={260} sid="myU"/>
                             </div>
                             {isDouble && (
-                              <div style={{ flex:"1 1 0",minWidth:0,textAlign:"center" }}>
+                              <div style={{ flex:"1 1 0",minWidth:0,textAlign:"center",maxWidth:"270px"}}>
                                 <div style={{ fontSize:8,color:"#5a4a28",letterSpacing:2,textTransform:"uppercase",marginBottom:4 }}>Bottom</div>
                                 <PreviewPan notes={bottom} positions={pan.positions||{}}
                                   ringsUpper={panRingsUpper} ringsBottom={panRingsBottom}

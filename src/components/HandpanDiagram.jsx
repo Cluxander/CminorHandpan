@@ -60,13 +60,13 @@ export default function HandpanDiagram({ activeNotes, onNoteToggle, notePosition
         <circle cx={CX} cy={CY} r={36} fill="rgba(0,0,0,0.75)" stroke="rgba(140,110,45,0.30)" strokeWidth={1.5}/>
       )}
 
-      {renderList.filter(n => !getNotePos(n.name)?.isDing).map(n => {
+      {/* {renderList.filter(n => !getNotePos(n.name)?.isDing).map(n => {
         const p = getNotePos(n.name); if (!p) return null;
         const lit = activeNotes.includes(n.name);
         return <line key={n.name} x1={CX} y1={CY} x2={p.x} y2={p.y}
           stroke={lit ? NOTE_COLOR(n.name)+"66" : "rgba(205,163,83,0.06)"}
           strokeWidth={lit ? 1.5 : .8} style={{ transition:"stroke .25s" }}/>;
-      })}
+      })} */}
 
       {renderList.map(n => {
         const pos = getNotePos(n.name); if (!pos) return null;
@@ -83,24 +83,24 @@ export default function HandpanDiagram({ activeNotes, onNoteToggle, notePosition
               stroke={lit ? col+"55" : "rgba(180,140,55,0.15)"}
               strokeWidth={lit?1.5:1} style={{ transition:"stroke .2s" }}/>
             <circle cx={x} cy={y} r={r}
-              fill={lit ? col+"38" : isDing ? "rgba(205,163,83,0.12)" : "rgba(20,17,8,0.88)"}
-              stroke={lit ? col : isDing ? "rgba(205,163,83,0.60)" : "rgba(140,110,45,0.25)"}
+              fill={lit ? col+"38" : "rgba(20, 17, 8, 0.75)"}
+              stroke={lit ? col : isDing ? "rgba(205,163,83,0.60)" : "rgba(140, 110, 45, 0.4)"}
               strokeWidth={lit?2.5:1.5} style={{ transition:"all .2s" }}/>
-            <circle cx={x} cy={y} r={Math.max(r-6,4)} fill="none"
-              stroke={lit ? col+"44" : "rgba(205,163,83,0.06)"}
-              strokeWidth={.8} style={{ transition:"stroke .2s" }}/>
-            <text x={x} y={isDing ? y-(r>30?5:4) : y+1}
+            <circle cx={x} cy={y} r={r-r/3} fill="none"
+              stroke={lit ? col+"44" : "rgba(205, 162, 83, 0.22)"}
+              strokeWidth={lit ? 1.5 : .8} style={{ transition:"stroke .2s" }}/>
+            <text x={x-sizeDef.fontSize/3} y={y+sizeDef.fontSize/10}
               textAnchor="middle" dominantBaseline="middle"
               fontSize={sizeDef.fontSize} fontFamily={FONT} fontWeight="600"
               fill={lit ? col : isDing ? "#d4a830" : "#9a8a60"}
               style={{ userSelect:"none", pointerEvents:"none", transition:"fill .2s" }}>{lbl}</text>
-            {oct && <text x={x} y={isDing ? y+(r>30?9:7) : y+r*0.55}
-              textAnchor="middle" fontSize={sizeDef.subFontSize} fontFamily={FONT} fontWeight="600"
-              fill={lit ? col+(isDing?"cc":"99") : isDing ? "#8a7040" : "#7a6840"}
+            {oct && <text x={x+sizeDef.fontSize/2} y={y+sizeDef.fontSize/3}
+              textAnchor="middle" fontSize={sizeDef.fontSize} fontFamily={FONT} fontWeight="600"
+              fill={lit ? col+(isDing?"cc":"99") : isDing ? "#d7a342" : "#7a6840"}
               style={{ userSelect:"none", pointerEvents:"none" }}>{oct}</text>}
-            {isDing && <text x={x} y={y+(oct?r*0.75:r*0.5)}
+            {isDing && <text x={x} y={y+(oct?r*0.75:r*0.5)-r/3}
               textAnchor="middle" fontSize={sizeDef.subFontSize-1} fontFamily={FONT} fontWeight="500"
-              fill={lit ? col+"ee" : "#8a7040"}
+              fill={lit ? col+"ee" : "#d7a342"}
               style={{ userSelect:"none", pointerEvents:"none" }}>ding</text>}
           </g>
         );
