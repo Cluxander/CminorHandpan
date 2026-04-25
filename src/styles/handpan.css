@@ -1,0 +1,11 @@
+/* Handpanist — global styles */
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+svg,
+g {
+  outline: none;
+}
