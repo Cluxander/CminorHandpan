@@ -460,7 +460,9 @@ function playNote(name) {
   const ctx = getCtx(); synthNote(f, ctx.currentTime, ctx, 0.80);
 }
 
-function playChord(notes, stagger = 0.07, freqMap) {
+function playChord(notes, strum = true, freqMap) {
+  // Fixed stagger of 0.13s per note when strumming (same feel regardless of chord size)
+  const stagger = strum ? 0.13 : 0;
   const ctx = getCtx(), now = ctx.currentTime;
   const noteVol = Math.max(0.45, 0.80 - notes.length * 0.06);
   notes.forEach((n, i) => {
@@ -861,6 +863,12 @@ function loadPans() {
 function midiToFreq(midi, a4=440) { return a4 * Math.pow(2, (midi - 69) / 12); }
 
 // ── Standard presets ────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// STANDARD HANDPANS — add new pans here as JSON objects
+// Each pan needs: id, name, a4, notes, positions, rings, sided
+// notes: [{name, midi}]  positions: { "NoteName": "angle:ringIdx:side" or "ding:0:side" }
+// rings: { upper:[{count,rotation}], bottom:[{count,rotation}] }  sided: "single"|"double"
+// ═══════════════════════════════════════════════════════════════════
 const STANDARD_PANS = [
   {
     id:"c_minor", name:"C Minor · 440Hz",
@@ -877,6 +885,8 @@ const STANDARD_PANS = [
     rings:{ upper:[{count:8,rotation:0}], bottom:[{count:6,rotation:0}] },
     sided:"single",
   },
+  // Add more standard pans below:
+  // { id:"d_minor", name:"D Minor · 440Hz", a4:440, notes:[...], positions:{...}, rings:{...}, sided:"single" },
 ];
 
 // ── All 12 chromatic note letters ──────────────────────────────
@@ -1165,9 +1175,7 @@ function BuilderCanvas({ notes, rings, onMove, onNoteClick, selectedNote, side="
       const{x,y}=svgPt(e.clientX,e.clientY);
       const ri=toRingIdx(x,y);
       if(ri===-1) {
-        // Center: only upper side can have a ding
         if(side!=="bottom") onMove(dragging.name,null,-1);
-        // bottom: silently snap back
       } else {
         const ring=rings[ri]||rings[0];
         const slots=getSnapAngles(ring.count||8,ring.rotation||0);
@@ -1180,6 +1188,9 @@ function BuilderCanvas({ notes, rings, onMove, onNoteClick, selectedNote, side="
         );
         if(!conflict) onMove(dragging.name,snapped,ri);
       }
+    } else {
+      // No movement = click: fire selection here in pointerUp to avoid Chrome ordering issues
+      onNoteClick&&onNoteClick(notes.find(n=>n.name===dragging.name));
     }
     setDragging(null);
   }
@@ -1264,7 +1275,6 @@ function BuilderCanvas({ notes, rings, onMove, onNoteClick, selectedNote, side="
         return (
           <g key={n.name}
             onPointerDown={e=>onPD(e,n.name)}
-            onClick={()=>{ if(!didMove.current) onNoteClick&&onNoteClick(n); }}
             onMouseEnter={()=>setHover(n.name)}
             onMouseLeave={()=>setHover(null)}
             style={{cursor:drag?"grabbing":"grab"}}>
@@ -1450,7 +1460,17 @@ function HandpanBuilder({ open, onClose, onApply }) {
       const sideNotesOnRing=buildNotes.filter(n=>n.side===targetSide&&(n.ringIdx??0)===ri&&n.angle!=null);
       const usedAngles=sideNotesOnRing.map(n=>n.angle||0);
       const halfSlot=360/ring.count/2;
-      const freeSlot=slots.find(a=>!usedAngles.some(ua=>Math.abs(((ua-a+540)%360)-180)<halfSlot));
+      // Order slots: lower first, LEFT side before right at each level
+      const orderedSlots=[...slots].sort((a,b)=>{
+        // Distance from bottom (180°): lower = larger dist from top
+        const distA=Math.abs(((a-180+360)%360)-180);
+        const distB=Math.abs(((b-180+360)%360)-180);
+        if(Math.abs(distA-distB)>halfSlot*0.5) return distB-distA; // lower first
+        // Same level: left side (180–270°) before right (90–180°)
+        const aLeft=(a>180&&a<270);
+        return aLeft?-1:1;
+      });
+      const freeSlot=orderedSlots.find(a=>!usedAngles.some(ua=>Math.abs(((ua-a+540)%360)-180)<halfSlot));
       if(freeSlot===undefined){ alert(`Ring ${ri+1} is full. Remove a note or add another ring.`); return; }
       angle=freeSlot; ringIdx=ri;
     }
@@ -1999,6 +2019,162 @@ function HandpanBuilder({ open, onClose, onApply }) {
 }
 
 
+// ── SavedChordsStrip ──────────────────────────────────────────
+function SavedChordsStrip({ chords, onChords, strum, freqMap, onPlay }) {
+  const [dragging, setDragging] = useState(null); // index being dragged
+  const [dragOver, setDragOver] = useState(null); // index hovered over
+  const [overDelete, setOverDelete] = useState(false);
+  const [playingProg, setPlayingProg] = useState(false);
+  const progTimer = useRef(null);
+
+  function startDrag(i, e) {
+    e.preventDefault();
+    setDragging(i);
+  }
+  function onDragEnter(i) { setDragOver(i); setOverDelete(false); }
+  function onDragEnd() {
+    if(overDelete && dragging!=null) {
+      const updated = chords.filter((_,i)=>i!==dragging);
+      onChords(updated);
+      try { localStorage.setItem("hp_saved_chords", JSON.stringify(updated)); } catch(e){}
+    } else if(dragging!=null && dragOver!=null && dragging!==dragOver) {
+      const arr=[...chords];
+      const [removed]=arr.splice(dragging,1);
+      arr.splice(dragOver,0,removed);
+      onChords(arr);
+      try { localStorage.setItem("hp_saved_chords", JSON.stringify(arr)); } catch(e){}
+    }
+    setDragging(null); setDragOver(null); setOverDelete(false);
+  }
+
+  function playProgression() {
+    if(playingProg) { clearTimeout(progTimer.current); setPlayingProg(false); return; }
+    setPlayingProg(true);
+    chords.forEach((c,i)=>{
+      progTimer.current = setTimeout(()=>{
+        playChord(c.notes, strum, freqMap);
+        if(i===chords.length-1) setTimeout(()=>setPlayingProg(false), 2000);
+      }, i*1500);
+    });
+  }
+
+  return (
+    <div style={{padding:"8px 0 0",userSelect:"none",WebkitUserSelect:"none"}}>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+        <span style={{fontSize:8,color:"#5a4a28",letterSpacing:3,textTransform:"uppercase",flexShrink:0}}>Saved</span>
+        {chords.map((c,i)=>(
+          <div key={c.key}
+            draggable
+            onDragStart={e=>startDrag(i,e)}
+            onDragEnter={()=>onDragEnter(i)}
+            onDragOver={e=>e.preventDefault()}
+            onDragEnd={onDragEnd}
+            onClick={()=>onPlay(c.notes)}
+            style={{
+              display:"flex",gap:3,alignItems:"center",
+              background:dragging===i?"rgba(160,120,200,0.30)":dragOver===i?"rgba(160,120,200,0.22)":"rgba(160,120,200,0.12)",
+              border:`1px solid ${dragging===i?"rgba(160,120,200,0.70)":"rgba(160,120,200,0.30)"}`,
+              color:"#c0a0e0",borderRadius:7,padding:"3px 8px",cursor:"grab",
+              fontSize:10,fontFamily:"monospace",
+              opacity:dragging===i?0.5:1,
+              transform:dragOver===i&&dragging!==i?"translateY(-2px)":"none",
+              transition:"transform .1s",
+            }}>
+            <span style={{fontSize:8,opacity:.4,cursor:"grab"}}>⠿</span>
+            {c.notes.map(n=>n.replace("b","♭")).join(" ")}
+          </div>
+        ))}
+
+        {/* Delete zone — appears while dragging */}
+        {dragging!=null&&(
+          <div
+            onDragEnter={()=>{setOverDelete(true);setDragOver(null);}}
+            onDragOver={e=>e.preventDefault()}
+            onDragLeave={()=>setOverDelete(false)}
+            style={{
+              padding:"3px 10px",borderRadius:6,fontSize:9,fontFamily:FONT,
+              background:overDelete?"rgba(180,60,60,0.35)":"rgba(140,45,45,0.12)",
+              border:`1px dashed ${overDelete?"rgba(220,80,80,0.8)":"rgba(140,45,45,0.35)"}`,
+              color:overDelete?"#ff8080":"#a85858",
+              transition:"all .15s",
+            }}>
+            🗑 Drop to delete
+          </div>
+        )}
+
+        {/* Progression play button — only when ≥2 chords */}
+        {chords.length>=2&&dragging==null&&(
+          <button onClick={playProgression} style={{
+            background:playingProg?"rgba(205,163,83,0.30)":"rgba(205,163,83,0.12)",
+            border:`1px solid rgba(205,163,83,${playingProg?".70":".35"})`,
+            color:playingProg?"#f0d078":"#c9a84c",
+            borderRadius:6,padding:"3px 10px",cursor:"pointer",
+            fontSize:9,fontFamily:FONT,flexShrink:0,
+          }}>{playingProg?"◼ Stop":"▶▶ Play all"}</button>
+        )}
+
+        <button onClick={()=>{onChords([]);try{localStorage.removeItem("hp_saved_chords");}catch(e){}}} style={{
+          background:"rgba(140,45,45,0.12)",border:"1px solid rgba(140,45,45,0.25)",
+          color:"#a85858",borderRadius:6,padding:"3px 8px",cursor:"pointer",
+          fontSize:9,fontFamily:FONT,
+        }}>↺ Clear</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Footer ────────────────────────────────────────────────────
+function AppFooter() {
+  const ic = (path, label) => (
+    <a href="#" title={label} style={{color:"rgba(205,163,83,0.50)",display:"flex",alignItems:"center",transition:"color .2s"}}
+      onMouseEnter={e=>e.currentTarget.style.color="rgba(205,163,83,0.90)"}
+      onMouseLeave={e=>e.currentTarget.style.color="rgba(205,163,83,0.50)"}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d={path}/></svg>
+    </a>
+  );
+  return (
+    <footer style={{
+      background:"#0a0906",borderTop:"1px solid rgba(205,163,83,0.10)",
+      padding:"28px 16px",textAlign:"center",fontFamily:FONT,
+    }}>
+      <div style={{maxWidth:880,margin:"0 auto"}}>
+        {/* Logo + name */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginBottom:10}}>
+          <svg width="24" height="24" viewBox="0 0 38 38" fill="none">
+            <circle cx="19" cy="19" r="17.5" stroke="#c9a84c" strokeWidth="1.5" strokeOpacity=".6"/>
+            <circle cx="19" cy="19" r="5" stroke="#c9a84c" strokeWidth="1.2" strokeOpacity=".5"/>
+            <circle cx="19" cy="7.2" r="2.2" fill="#c9a84c" opacity=".7"/>
+            <circle cx="27.9" cy="12.5" r="2.2" fill="#c9a84c" opacity=".7"/>
+            <circle cx="27.9" cy="25.5" r="2.2" fill="#c9a84c" opacity=".7"/>
+            <circle cx="19" cy="30.8" r="2.2" fill="#c9a84c" opacity=".7"/>
+            <circle cx="10.1" cy="25.5" r="2.2" fill="#c9a84c" opacity=".7"/>
+            <circle cx="10.1" cy="12.5" r="2.2" fill="#c9a84c" opacity=".7"/>
+          </svg>
+          <span style={{fontSize:14,color:"rgba(205,163,83,0.70)",fontWeight:600,letterSpacing:.5}}>Handpanist</span>
+        </div>
+
+        {/* Social icons */}
+        <div style={{display:"flex",gap:18,justifyContent:"center",marginBottom:14}}>
+          {/* Facebook */}
+          {ic("M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z","Facebook")}
+          {/* Instagram */}
+          {ic("M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6zM2 9h4v12H2z M4 6a2 2 0 100-4 2 2 0 000 4z","Instagram placeholder")}
+          {/* TikTok */}
+          {ic("M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.73a8.14 8.14 0 004.77 1.53V6.79a4.85 4.85 0 01-1-.1z","TikTok")}
+          {/* YouTube */}
+          {ic("M22.54 6.42a2.78 2.78 0 00-1.94-1.96C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 00-1.94 1.96A29 29 0 001 12a29 29 0 00.46 5.58A2.78 2.78 0 003.4 19.54C5.12 20 12 20 12 20s6.88 0 8.6-.46a2.78 2.78 0 001.94-1.96A29 29 0 0023 12a29 29 0 00-.46-5.58zM9.75 15.02V8.98L15.5 12l-5.75 3.02z","YouTube")}
+          {/* Buy me a coffee */}
+          {ic("M18 8h1a4 4 0 010 8h-1M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8zM6 1v3M10 1v3M14 1v3","Buy me a coffee")}
+        </div>
+
+        <div style={{fontSize:10,color:"rgba(205,163,83,0.25)",letterSpacing:.5}}>
+          © {new Date().getFullYear()} · Made with ♥ in Bucharest
+        </div>
+      </div>
+    </footer>
+  );
+}
+
 export default function HandpanAtlas() {
   const [activeNotes,  setActiveNotes]  = useState([]); // lit on handpan (display)
   const [panNotes,     setPanNotes]     = useState([]); // drives list filter when panFiltering=true
@@ -2084,6 +2260,7 @@ export default function HandpanAtlas() {
   const handleNoteToggle = useCallback((noteName) => {
     setPanFiltering(true);
     setSelectedKey(null);
+    setCardHighlightNotes([]); // clear card highlight when user taps handpan
     const freq = currentPan.freq?.[noteName] ||
       (() => { const n=currentPan.notes?.find(x=>x.name===noteName); return n?midiToFreq(n.midi,currentPan.a4||440):null; })();
     if (freq) { const ctx=getCtx(); synthNote(freq, ctx.currentTime, ctx, 0.44); }
@@ -2096,19 +2273,25 @@ export default function HandpanAtlas() {
     });
   }, [currentPan]);
 
-  // ── chord card click: play + highlight only, never change list order ──
+  // Separate state for card-click handpan highlight — does NOT drive sort/filter
+  const [cardHighlightNotes, setCardHighlightNotes] = useState([]);
+
+  // ── chord card click: play + light up handpan + highlight related cards ──
   const handleChordClick = (chord) => {
-    playChord(chord.notes, strum ? 0.13 : 0, currentPan.freq);
+    playChord(chord.notes, strum, currentPan.freq);
     if (selectedKey === chord.key) {
-      setSelectedKey(null); // deselect — restore equal visibility
+      setSelectedKey(null);
+      setCardHighlightNotes([]);
       return;
     }
     setSelectedKey(chord.key);
-    // activeNotes intentionally NOT changed — list order stays the same
+    // Only set cardHighlightNotes for handpan visual — activeNotes untouched
+    // so the list order (driven by activeNotes from handpan taps) never changes
+    setCardHighlightNotes(chord.notes);
   };
 
-  const showAll  = () => { setPanFiltering(false); setSelectedKey(null); };
-  const clearAll = () => { setActiveNotes([]); setPanNotes([]); setPanFiltering(false); setSelectedKey(null); };
+  const showAll  = () => { setPanFiltering(false); setSelectedKey(null); setCardHighlightNotes([]); };
+  const clearAll = () => { setActiveNotes([]); setPanNotes([]); setPanFiltering(false); setSelectedKey(null); setCardHighlightNotes([]); };
   const clearFilters = () => setFilters({noteCounts:[], cats:[], notes:[], chordNames:[], hideDuplicates:false});
 
   const filtered = useMemo(() => {
@@ -2202,16 +2385,30 @@ export default function HandpanAtlas() {
       <div style={{
         background:"linear-gradient(180deg,#1a1508 0%,#0e0c07 100%)",
         borderBottom:"1px solid rgba(205,163,83,0.13)",
-        padding:"20px 16px",textAlign:"center",
+        padding:"24px 16px 18px",textAlign:"center",
       }}>
-        <h1 style={{
-          fontSize:"clamp(28px,6vw,42px)",fontWeight:700,
-          color:"#e8d4a0",margin:0,letterSpacing:-1,
-          fontFamily:FONT,lineHeight:1.0,
-          textShadow:"0 0 30px rgba(205,163,83,0.25)",
-        }}>
-          Handpan Hero
-        </h1>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginBottom:6}}>
+          <svg width="38" height="38" viewBox="0 0 38 38" fill="none">
+            <circle cx="19" cy="19" r="17.5" stroke="#c9a84c" strokeWidth="1.5" strokeOpacity=".7"/>
+            <circle cx="19" cy="19" r="12" stroke="#c9a84c" strokeWidth="1" strokeOpacity=".3"/>
+            <circle cx="19" cy="19" r="5" stroke="#c9a84c" strokeWidth="1.2" strokeOpacity=".6"/>
+            <circle cx="19" cy="7.2" r="2.5" fill="#c9a84c" opacity=".8"/>
+            <circle cx="27.9" cy="12.5" r="2.5" fill="#c9a84c" opacity=".8"/>
+            <circle cx="27.9" cy="25.5" r="2.5" fill="#c9a84c" opacity=".8"/>
+            <circle cx="19" cy="30.8" r="2.5" fill="#c9a84c" opacity=".8"/>
+            <circle cx="10.1" cy="25.5" r="2.5" fill="#c9a84c" opacity=".8"/>
+            <circle cx="10.1" cy="12.5" r="2.5" fill="#c9a84c" opacity=".8"/>
+          </svg>
+          <h1 style={{
+            fontSize:"clamp(30px,6vw,44px)",fontWeight:700,
+            color:"#e8d4a0",margin:0,letterSpacing:-1,
+            fontFamily:FONT,lineHeight:1.0,
+            textShadow:"0 0 30px rgba(205,163,83,0.25)",
+          }}>Handpanist</h1>
+        </div>
+        <div style={{fontSize:12,color:"#6a5a30",fontFamily:FONT,fontStyle:"italic",letterSpacing:.5}}>
+          find the harmony hiding in your hands
+        </div>
       </div>
 
       {/* ── STICKY HANDPAN ── */}
@@ -2224,16 +2421,17 @@ export default function HandpanAtlas() {
         userSelect:"none",WebkitUserSelect:"none",
       }}>
         <div style={{maxWidth:600,margin:"0 auto",display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
-          {/* Top row: builder button + closest chord centered */}
-          <div style={{width:"100%",display:"flex",alignItems:"stretch",gap:8}}>
+          {/* Top row: builder button (fixed h=30) + closest chord centered */}
+          <div style={{width:"100%",display:"flex",alignItems:"stretch",gap:8,height:30}}>
             <button onClick={()=>setBuilderOpen(true)} title="Open Handpan Workshop"
               style={{
                 background:"rgba(205,163,83,0.10)",border:"1px solid rgba(205,163,83,0.25)",
-                borderRadius:7,padding:"5px 10px",cursor:"pointer",flexShrink:0,
+                borderRadius:7,padding:"0 10px",cursor:"pointer",flexShrink:0,
                 fontSize:10,color:"#c9a84c",fontFamily:FONT,
                 display:"flex",alignItems:"center",gap:4,
+                whiteSpace:"nowrap",overflow:"hidden",maxWidth:"45%",
               }}>
-              <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none" style={{flexShrink:0}}>
                 <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.2"/>
                 <circle cx="7" cy="7" r="2.5" stroke="currentColor" strokeWidth="1"/>
                 <circle cx="7" cy="2.5" r="1.2" fill="currentColor" opacity=".7"/>
@@ -2243,10 +2441,10 @@ export default function HandpanAtlas() {
                 <circle cx="3.3" cy="9.2" r="1.2" fill="currentColor" opacity=".7"/>
                 <circle cx="3.3" cy="4.8" r="1.2" fill="currentColor" opacity=".7"/>
               </svg>
-              <span style={{fontWeight:700,fontSize:13}}>{currentPan.name||"C Minor"}</span>
+              <span style={{fontWeight:700,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{currentPan.name||"C Minor"}</span>
             </button>
 
-            <div style={{flex:1,display:"flex",justifyContent:"center"}}>
+            <div style={{flex:1,display:"flex",justifyContent:"center",alignItems:"center"}}>
               {activeNotes.length>=2&&(()=>{
                 const best = panChords.find(c=>activeNotes.every(n=>c.notes.includes(n))&&c.notes.length===activeNotes.length)
                   || panChords.find(c=>activeNotes.every(n=>c.notes.includes(n)));
@@ -2254,30 +2452,36 @@ export default function HandpanAtlas() {
                 const acc = CAT_STYLE[best.cat]?.accent||"#c9a84c";
                 return (
                   <div style={{
-                    display:"flex",alignItems:"center",gap:6,
+                    display:"flex",alignItems:"center",gap:6,height:"100%",
                     background:`${acc}12`,border:`1px solid ${acc}33`,
-                    borderRadius:7,padding:"4px 12px",
+                    borderRadius:7,padding:"0 12px",
                     fontSize:11,fontFamily:FONT,
+                    whiteSpace:"nowrap",overflow:"hidden",
                   }}>
-                    <span style={{color:acc,fontWeight:700,fontSize:13}}>{best.root.replace("b","♭")}</span>
-                    <span style={{color:`${acc}cc`}}>{best.name}</span>
-                    <span style={{fontSize:8,color:`${acc}66`}}>{best.noteCount}♩</span>
+                    <span style={{color:acc,fontWeight:700,fontSize:13,flexShrink:0}}>{best.root.replace("b","♭")}</span>
+                    <span style={{color:`${acc}cc`,overflow:"hidden",textOverflow:"ellipsis"}}>{best.name}</span>
+                    <span style={{fontSize:8,color:`${acc}66`,flexShrink:0}}>{best.noteCount}♩</span>
                   </div>
                 );
               })()}
             </div>
 
-            {/* Invisible mirror of the button to keep chord truly centered */}
-            <div style={{visibility:"hidden",padding:"5px 10px",fontSize:13,fontWeight:700}}>
+            {/* Invisible mirror to balance layout */}
+            <div style={{visibility:"hidden",padding:"0 10px",fontSize:13,fontWeight:700,
+              maxWidth:"45%",flexShrink:0,whiteSpace:"nowrap",display:"flex",alignItems:"center"}}>
               <span>{currentPan.name||"C Minor"}</span>
             </div>
           </div>
           {/* Diagrams row — side by side if double-sided, scale to fit */}
+          {(()=>{
+            // Card highlight takes priority when a card is selected; else use pan-tapped notes
+            const diagramActiveNotes = cardHighlightNotes.length>0 ? cardHighlightNotes : activeNotes;
+            return (
           <div style={{display:"flex",gap:4,justifyContent:"center",alignItems:"flex-start",width:"100%",maxWidth:"100%",overflow:"hidden"}}>
             <div style={{flex:"1 1 0",minWidth:0,maxWidth:260}}>
               {currentPan.sided==="double"&&<div style={{fontSize:7,color:"#5a4a28",textAlign:"center",letterSpacing:2,textTransform:"uppercase",marginBottom:2}}>Upper</div>}
               <HandpanDiagram uniqueId="upper"
-                activeNotes={activeNotes} onNoteToggle={handleNoteToggle}
+                activeNotes={diagramActiveNotes} onNoteToggle={handleNoteToggle}
                 notePositions={currentPan.positions}
                 panNotes={(currentPan.notes||[]).filter(n=>n.side!=="bottom")}/>
             </div>
@@ -2285,12 +2489,14 @@ export default function HandpanAtlas() {
               <div style={{flex:"1 1 0",minWidth:0,maxWidth:260}}>
                 <div style={{fontSize:7,color:"#5a4a28",textAlign:"center",letterSpacing:2,textTransform:"uppercase",marginBottom:2}}>Bottom</div>
                 <HandpanDiagram uniqueId="bottom"
-                  activeNotes={activeNotes} onNoteToggle={handleNoteToggle}
+                  activeNotes={diagramActiveNotes} onNoteToggle={handleNoteToggle}
                   notePositions={currentPan.positions}
                   panNotes={(currentPan.notes||[]).filter(n=>n.side==="bottom")}/>
               </div>
             )}
           </div>
+            );
+          })()}
           {/* Fixed-height info row */}
           <div style={{width:"100%",maxWidth:440,textAlign:"center",height:38,display:"flex",flexDirection:"column",justifyContent:"center"}}>
             {activeNotes.length>0?(
@@ -2332,28 +2538,21 @@ export default function HandpanAtlas() {
 
         {/* ── SAVED CHORDS STRIP ── */}
         {savedChords.length>0&&(
-          <div style={{padding:"8px 0 0",display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-            <span style={{fontSize:8,color:"#5a4a28",letterSpacing:3,textTransform:"uppercase",flexShrink:0}}>Saved</span>
-            {savedChords.map(c=>(
-              <button key={c.key} onClick={()=>{
-                setActiveNotes(c.notes);
-                setPanFiltering(false);
-                playChord(c.notes, strum?0.13:0, currentPan.freq);
-              }} style={{
-                display:"flex",gap:3,alignItems:"center",
-                background:"rgba(160,120,200,0.12)",border:"1px solid rgba(160,120,200,0.30)",
-                color:"#c0a0e0",borderRadius:7,padding:"3px 8px",cursor:"pointer",
-                fontSize:10,fontFamily:"monospace",
-              }}>
-                {c.notes.map(n=>n.replace("b","♭")).join(" ")}
-              </button>
-            ))}
-            <button onClick={clearSavedChords} style={{
-              background:"rgba(140,45,45,0.12)",border:"1px solid rgba(140,45,45,0.25)",
-              color:"#a85858",borderRadius:6,padding:"3px 8px",cursor:"pointer",
-              fontSize:9,fontFamily:FONT,marginLeft:4,
-            }}>↺ Clear</button>
-          </div>
+          <SavedChordsStrip
+            chords={savedChords}
+            onChords={setSavedChords}
+            strum={strum}
+            freqMap={currentPan.freq}
+            onPlay={(notes)=>{
+              // Act as if last note of chord was tapped on handpan
+              const last=notes[notes.length-1];
+              setActiveNotes(notes);
+              setPanNotes(notes);
+              setPanFiltering(true);
+              playChord(notes,strum,currentPan.freq);
+              setSelectedKey(null);
+            }}
+          />
         )}
 
         {/* ── FILTER BAR ── */}
@@ -2413,7 +2612,7 @@ export default function HandpanAtlas() {
 
             {/* Play button */}
             <button
-              onClick={()=>{ if(activeNotes.length>0) playChord(activeNotes, strum?0.13:0, currentPan.freq); }}
+              onClick={()=>{ if(activeNotes.length>0) playChord(activeNotes, strum, currentPan.freq); }}
               disabled={activeNotes.length===0}
               style={{
                 display:"flex",alignItems:"center",gap:5,
@@ -2522,6 +2721,8 @@ export default function HandpanAtlas() {
         </div>
 
       </div>{/* end content wrapper */}
+
+      <AppFooter/>
 
       <FilterModal open={filterOpen} onClose={()=>setFilterOpen(false)} filters={filters} onChange={setFilters}
         availableCats={panAvailableCats} availableChordNames={panChordNames} noteList={currentPan.notes.map(n=>n.name)}/>
