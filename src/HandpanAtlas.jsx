@@ -529,6 +529,12 @@ function HandpanDiagram({ activeNotes, onNoteToggle, notePositions, panNotes, un
       <circle cx={CX} cy={CY} r={115} fill="none" stroke="rgba(205,163,83,0.10)" strokeWidth={1} strokeDasharray="4 8"/>
       <circle cx={CX} cy={CY} r={50}  fill="none" stroke="rgba(205,163,83,0.08)" strokeWidth={1}/>
 
+      {/* Bottom side hole */}
+      {panNotes && panNotes.length>0 && panNotes.every(n=>n.side==="bottom")&&(
+        <circle cx={CX} cy={CY} r={36} fill="rgba(0,0,0,0.75)"
+          stroke="rgba(140,110,45,0.30)" strokeWidth={1.5}/>
+      )}
+
       {/* Spokes */}
       {renderList.filter(n=>!getNotePos(n.name)?.isDing).map(n=>{
         const p=getNotePos(n.name);
@@ -1417,9 +1423,11 @@ function HandpanBuilder({ open, onClose, onApply }) {
     }
     const isDingSize=NOTE_SIZES[newNoteSize]?.isDing;
     const targetSide=sided==="double"?activeSide:"upper";
-    // On bottom side, ding-size notes are allowed but go on a ring (no center)
-    // On upper side, ding notes can go to center (angle=null) or ring
-    const forceToRing = activeSide==="bottom" && isDingSize;
+    // On bottom: ding-size → force to ring. On upper: if center already occupied, also force to ring.
+    const centerOccupied = buildNotes.some(n=>
+      n.side===targetSide && (n.pos==="ding"||n.ringIdx==null||n.ringIdx===-1) && n.angle==null
+    );
+    const forceToRing = (activeSide==="bottom" && isDingSize) || (isDingSize && centerOccupied);
     let angle=null, ringIdx=null;
     if(!isDingSize || forceToRing) {
       const sRings=rings[targetSide]||[{count:8,rotation:0}];
@@ -1433,7 +1441,6 @@ function HandpanBuilder({ open, onClose, onApply }) {
       if(freeSlot===undefined){ alert(`Ring ${ri+1} is full. Remove a note or add another ring.`); return; }
       angle=freeSlot; ringIdx=ri;
     }
-    // isDingSize and not forceToRing = upper ding → goes to center (angle=null, ringIdx=null)
     MIDI_TO_NAME[midi]=name;
     setBuild(b=>({...b,
       buildNotes:[...b.buildNotes,{name,midi,pos:(isDingSize&&!forceToRing)?"ding":"ring",angle,ringIdx,size:newNoteSize,side:targetSide}],
@@ -1755,7 +1762,17 @@ function HandpanBuilder({ open, onClose, onApply }) {
                       {showDouble&&<div style={{fontSize:9,color:"#6a5a30",textAlign:"center",letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>Upper</div>}
                       <BuilderCanvas notes={upperNotes} rings={rings.upper||[{count:8,rotation:0}]}
                         onMove={moveNote}
-                        onNoteClick={n=>{previewTap(n);setB("selectedNote",build.selectedNote===n.name?null:n.name);}}
+                        onNoteClick={n=>{
+                          previewTap(n);
+                          const letter=n.name.replace(/\d/,"");
+                          const octave=parseInt(n.name.match(/\d/)?.[0]||4);
+                          setBuild(b=>({...b,
+                            selectedNote:b.selectedNote===n.name?null:n.name,
+                            newLetter:letter, newOctave:octave,
+                            newNoteSize:n.size||"medium",
+                            newNoteRing:Math.max(0,n.ringIdx??0),
+                          }));
+                        }}
                         selectedNote={selectedNote} side="upper"/>
                     </div>
                     {showDouble&&(
@@ -1763,7 +1780,17 @@ function HandpanBuilder({ open, onClose, onApply }) {
                         <div style={{fontSize:9,color:"#6a5a30",textAlign:"center",letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>Bottom</div>
                         <BuilderCanvas notes={bottomNotes} rings={rings.bottom||[{count:6,rotation:0}]}
                           onMove={moveNote}
-                          onNoteClick={n=>{previewTap(n);setB("selectedNote",build.selectedNote===n.name?null:n.name);}}
+                          onNoteClick={n=>{
+                            previewTap(n);
+                            const letter=n.name.replace(/\d/,"");
+                            const octave=parseInt(n.name.match(/\d/)?.[0]||4);
+                            setBuild(b=>({...b,
+                              selectedNote:b.selectedNote===n.name?null:n.name,
+                              newLetter:letter, newOctave:octave,
+                              newNoteSize:n.size||"medium",
+                              newNoteRing:Math.max(0,n.ringIdx??0),
+                            }));
+                          }}
                           selectedNote={selectedNote} side="bottom"/>
                       </div>
                     )}
@@ -1789,13 +1816,7 @@ function HandpanBuilder({ open, onClose, onApply }) {
                       <div style={{fontSize:8,color:"#6a5a30",letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>Size / Role</div>
                       <Dropdown value={newNoteSize} onChange={s=>setB("newNoteSize",s)} options={sizeOpts}/>
                     </div>
-                    {/* Ring — only for non-ding or forced-to-ring */}
-                    {(!NOTE_SIZES[newNoteSize]?.isDing || activeSide==="bottom") && (rings[activeSide]||[]).length>1&&(
-                      <div style={{flex:"1 1 90px"}}>
-                        <div style={{fontSize:8,color:"#6a5a30",letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>Ring</div>
-                        <Dropdown value={newNoteRing} onChange={r=>setB("newNoteRing",r)} options={ringOpts}/>
-                      </div>
-                    )}
+                    {/* Ring assignment removed — set by dragging notes on the canvas */}
                   </div>
 
                   {/* Action buttons */}
@@ -1931,8 +1952,30 @@ export default function HandpanAtlas() {
 
   const [builderOpen, setBuilderOpen] = useState(false);
 
+  // ── Saved chords ──────────────────────────────────────────────
+  const [savedChords, setSavedChords] = useState(()=>{
+    try { return JSON.parse(localStorage.getItem("hp_saved_chords")||"[]"); } catch(e){ return []; }
+  });
+
+  function saveChord() {
+    if(activeNotes.length===0) return;
+    const key = [...activeNotes].sort().join("|");
+    if(savedChords.some(c=>c.key===key)) return; // no duplicates
+    const newChords = [...savedChords, { key, notes:[...activeNotes] }];
+    setSavedChords(newChords);
+    try { localStorage.setItem("hp_saved_chords", JSON.stringify(newChords)); } catch(e){}
+  }
+  function clearSavedChords() {
+    setSavedChords([]);
+    try { localStorage.removeItem("hp_saved_chords"); } catch(e){}
+  }
+
   // ── apply a new handpan from the builder ─────────────────────
   const [currentPan, setCurrentPan] = useState(()=>{
+    try {
+      const saved = localStorage.getItem("hp_last_pan");
+      if(saved) { const p=JSON.parse(saved); if(p?.notes?.length) return p; }
+    } catch(e){}
     const p=STANDARD_PANS[0];
     const freq={}; p.notes.forEach(n=>{freq[n.name]=midiToFreq(n.midi);});
     return {notes:p.notes,freq,positions:p.positions,rings:p.rings,sided:p.sided,name:p.name};
@@ -1942,14 +1985,16 @@ export default function HandpanAtlas() {
     let rings = pan.rings;
     if (!rings) rings = {upper:[{count:8,rotation:0}],bottom:[{count:6,rotation:0}]};
     else if (Array.isArray(rings)) rings = {upper:rings, bottom:[{count:6,rotation:0}]};
-    setCurrentPan({
+    const newPan = {
       notes: pan.notes,
       freq:  pan.freq,
       positions: pan.positions,
       rings,
       sided: pan.sided || "single",
       name:  pan.name,
-    });
+    };
+    setCurrentPan(newPan);
+    try { localStorage.setItem("hp_last_pan", JSON.stringify(newPan)); } catch(e){}
     setActiveNotes([]); setPanNotes([]); setPanFiltering(false); setSelectedKey(null);
   }, []);
   const [filters,    setFilters]    = useState({noteCounts:[3,4], cats:["Major","Minor","Diminished","Suspended"], notes:[], chordNames:[], hideDuplicates:true});
@@ -1992,15 +2037,14 @@ export default function HandpanAtlas() {
 
   // ── chord card click: highlight + sound, never touch the list ──
   const handleChordClick = (chord) => {
+    playChord(chord.notes, strum ? 0.13 : 0, currentPan.freq);
     if (selectedKey === chord.key) {
       setSelectedKey(null);
       setActiveNotes(panMode ? panNotes : []);
       return;
     }
     setSelectedKey(chord.key);
-    setActiveNotes(chord.notes); // light up handpan
-    // panFiltering and panNotes untouched → list stays the same
-    playChord(chord.notes, strum ? 0.13 : 0, currentPan.freq);
+    setActiveNotes(chord.notes);
   };
 
   const showAll  = () => { setPanFiltering(false); setSelectedKey(null); };
@@ -2023,8 +2067,23 @@ export default function HandpanAtlas() {
     }
 
     if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(c => c.name.toLowerCase().includes(q) || c.root.toLowerCase().includes(q));
+      const q = search.toLowerCase().replace("♭","b").replace("♯","#").trim();
+      const tokens = q.split(/\s+/); // ["c", "minor"] or ["c3", "minor"] or ["minor"]
+      list = list.filter(c => {
+        const rootL = c.root.toLowerCase();
+        const nameL = c.name.toLowerCase();
+        const catL  = c.cat.toLowerCase();
+        const allText = `${rootL} ${nameL} ${catL} ${c.notes.join(" ").toLowerCase()}`;
+        // Every token must match somewhere in the chord's data
+        return tokens.every(tok =>
+          rootL.includes(tok)  ||
+          nameL.includes(tok)  ||
+          catL.includes(tok)   ||
+          c.notes.some(n=>n.toLowerCase().includes(tok)) ||
+          // match root pitch class without octave: "c" matches "c3", "c4", "c5"
+          rootL.replace(/\d/,"").includes(tok)
+        );
+      });
     }
     if (filters.hideDuplicates) {
       const groups = new Map();
@@ -2165,6 +2224,32 @@ export default function HandpanAtlas() {
       {/* ── CONTENT WRAPPER ── */}
       <div style={{maxWidth:880,margin:"0 auto",padding:"0 12px"}}>
 
+        {/* ── SAVED CHORDS STRIP ── */}
+        {savedChords.length>0&&(
+          <div style={{padding:"8px 0 0",display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+            <span style={{fontSize:8,color:"#5a4a28",letterSpacing:3,textTransform:"uppercase",flexShrink:0}}>Saved</span>
+            {savedChords.map(c=>(
+              <button key={c.key} onClick={()=>{
+                setActiveNotes(c.notes);
+                setPanFiltering(false);
+                playChord(c.notes, strum?0.13:0, currentPan.freq);
+              }} style={{
+                display:"flex",gap:3,alignItems:"center",
+                background:"rgba(160,120,200,0.12)",border:"1px solid rgba(160,120,200,0.30)",
+                color:"#c0a0e0",borderRadius:7,padding:"3px 8px",cursor:"pointer",
+                fontSize:10,fontFamily:"monospace",
+              }}>
+                {c.notes.map(n=>n.replace("b","♭")).join(" ")}
+              </button>
+            ))}
+            <button onClick={clearSavedChords} style={{
+              background:"rgba(140,45,45,0.12)",border:"1px solid rgba(140,45,45,0.25)",
+              color:"#a85858",borderRadius:6,padding:"3px 8px",cursor:"pointer",
+              fontSize:9,fontFamily:FONT,marginLeft:4,
+            }}>↺ Clear</button>
+          </div>
+        )}
+
         {/* ── FILTER BAR ── */}
         <div style={{padding:"10px 0 0",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
           {/* Left group: filters + search + contextual buttons */}
@@ -2205,7 +2290,7 @@ export default function HandpanAtlas() {
           {/* Spacer pushes right group to far right */}
           <span style={{flex:1}}/>
 
-          {/* Right group: strum mode + play */}
+            {/* Right group: strum mode + play + save chord */}
           <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
             {/* Strum / Together toggle */}
             <button onClick={()=>setStrum(s=>!s)} style={{
@@ -2220,7 +2305,7 @@ export default function HandpanAtlas() {
               <span>{strum?"Strum":"Together"}</span>
             </button>
 
-            {/* Play button — plays the active notes as a chord */}
+            {/* Play button */}
             <button
               onClick={()=>{ if(activeNotes.length>0) playChord(activeNotes, strum?0.13:0, currentPan.freq); }}
               disabled={activeNotes.length===0}
@@ -2235,6 +2320,22 @@ export default function HandpanAtlas() {
               }}>
               <span style={{fontSize:14,lineHeight:1}}>▶</span>
               <span style={{fontSize:11}}>Play</span>
+            </button>
+
+            {/* Save Chord */}
+            <button
+              onClick={saveChord}
+              disabled={activeNotes.length===0}
+              style={{
+                display:"flex",alignItems:"center",gap:5,
+                background:activeNotes.length>0?"rgba(160,120,200,0.18)":"rgba(255,255,255,0.03)",
+                border:`1px solid ${activeNotes.length>0?"rgba(160,120,200,0.40)":"rgba(255,255,255,0.07)"}`,
+                color:activeNotes.length>0?"#c0a0e0":"#3a3a30",
+                borderRadius:8,padding:"6px 11px",
+                cursor:activeNotes.length>0?"pointer":"default",
+                fontSize:11,fontFamily:FONT,whiteSpace:"nowrap",
+              }}>
+              <span>♡ Save</span>
             </button>
           </div>
         </div>
