@@ -2025,11 +2025,11 @@ function HandpanBuilder({ open, onClose, onApply }) {
 
 
 // ── SavedChordsStrip ──────────────────────────────────────────
-const BPM = 60;
+const BPM = 80;
 const BEAT_SEC = 0.5; // half a second per beat
-const TIME_SIGS = [2, 3, 4, 5]; // beats per bar options
+const TIME_SIGS = [2, 3, 4, 5];
 
-function SavedChordsStrip({ chords, onChords, strum, freqMap, onPlay }) {
+function SavedChordsStrip({ chords, onChords, strum, freqMap, onPlay, onProgHighlight }) {
   const [dragging,    setDragging]    = useState(null);
   const [dragOver,    setDragOver]    = useState(null);
   const [overDelete,  setOverDelete]  = useState(false);
@@ -2047,35 +2047,50 @@ function SavedChordsStrip({ chords, onChords, strum, freqMap, onPlay }) {
   }
 
   // ── BPM-synced progression ──────────────────────────────────
+  const stoppedRef = useRef(false);
+
   function playProgression() {
     if(playingProg) {
+      stoppedRef.current = true;
       clearTimeout(progTimer.current);
       setPlayingProg(false);
+      onProgHighlight&&onProgHighlight(null); // restore handpan
       return;
     }
+    stoppedRef.current = false;
     setPlayingProg(true);
 
     function playLoop() {
+      if(stoppedRef.current) return;
       let beatOffset = 0;
       chords.forEach(c => {
         const notesInChord = c.notes.length;
         if(strum) {
-          c.notes.forEach((_, ni) => {
+          c.notes.forEach((note, ni) => {
             const delaySec = (beatOffset + ni) * BEAT_SEC;
             setTimeout(() => {
-              const f = freqMap[c.notes[ni]];
+              if(stoppedRef.current) return;
+              const f = freqMap[note];
               if(f) { const ctx=getCtx(); synthNote(f, ctx.currentTime, ctx, 0.55); }
+              // Light up this note — keep it lit until next note (no clear during silence)
+              onProgHighlight&&onProgHighlight([note]);
             }, Math.round(delaySec * 1000));
           });
         } else {
           const delaySec = beatOffset * BEAT_SEC;
-          setTimeout(() => { playChord(c.notes, false, freqMap); },
-            Math.round(delaySec * 1000));
+          setTimeout(() => {
+            if(stoppedRef.current) return;
+            playChord(c.notes, false, freqMap);
+            // Light up whole chord — keep lit until next chord
+            onProgHighlight&&onProgHighlight(c.notes);
+          }, Math.round(delaySec * 1000));
         }
         const barsNeeded = Math.ceil(notesInChord / beatsPerBar);
         beatOffset += barsNeeded * beatsPerBar;
       });
-      progTimer.current = setTimeout(playLoop, Math.round(beatOffset * BEAT_SEC * 1000));
+      progTimer.current = setTimeout(() => {
+        if(!stoppedRef.current) playLoop();
+      }, Math.round(beatOffset * BEAT_SEC * 1000));
     }
 
     playLoop();
@@ -2362,13 +2377,29 @@ export default function HandpanAtlas() {
   }, [activeNotes, selectedKey, panChords]);
 
   // ── note toggle ───────────────────────────────────────────────
+  // Separate state for loop-play handpan animation — highest priority, never affects chord cards
+  const [progHighlightNotes, setProgHighlightNotes] = useState([]);
+  const progPlayingRef = useRef(false); // true while loop progression is running
+
   const handleNoteToggle = useCallback((noteName) => {
-    setPanFiltering(true);
-    setSelectedKey(null);
-    setCardHighlightNotes([]); // clear card highlight when user taps handpan
     const freq = currentPan.freq?.[noteName] ||
       (() => { const n=currentPan.notes?.find(x=>x.name===noteName); return n?midiToFreq(n.midi,currentPan.a4||440):null; })();
     if (freq) { const ctx=getCtx(); synthNote(freq, ctx.currentTime, ctx, 0.44); }
+
+    if(progPlayingRef.current) {
+      // During loop: only play sound + flash for one beat, no state changes
+      setProgHighlightNotes([noteName]);
+      setTimeout(()=>{
+        // Restore to last prog note — progHighlightNotes will be set by next loop tick
+        // so just clear the override; next scheduled tick will set it
+      }, Math.round(BEAT_SEC * 1000));
+      return;
+    }
+
+    // Normal behaviour
+    setPanFiltering(true);
+    setSelectedKey(null);
+    setCardHighlightNotes([]);
     setActiveNotes(prev => {
       const was = prev.includes(noteName);
       const next = was ? prev.filter(n=>n!==noteName) : [...prev, noteName];
@@ -2579,8 +2610,10 @@ export default function HandpanAtlas() {
           </div>
           {/* Diagrams row — side by side if double-sided, scale to fit */}
           {(()=>{
-            // Card highlight takes priority when a card is selected; else use pan-tapped notes
-            const diagramActiveNotes = cardHighlightNotes.length>0 ? cardHighlightNotes : activeNotes;
+            // progHighlight (loop play) > cardHighlight > pan-tapped notes
+            const diagramActiveNotes = progHighlightNotes.length>0
+              ? progHighlightNotes
+              : cardHighlightNotes.length>0 ? cardHighlightNotes : activeNotes;
             return (
           <div style={{display:"flex",gap:4,justifyContent:"center",alignItems:"flex-start",width:"100%",maxWidth:"100%",overflow:"hidden"}}>
             <div style={{flex:"1 1 0",minWidth:0,maxWidth:260}}>
@@ -2648,9 +2681,16 @@ export default function HandpanAtlas() {
             onChords={setSavedChords}
             strum={strum}
             freqMap={currentPan.freq}
+            onProgHighlight={notes => {
+              if(notes === null) {
+                progPlayingRef.current = false;
+                setProgHighlightNotes([]);
+              } else {
+                progPlayingRef.current = true;
+                setProgHighlightNotes(notes);
+              }
+            }}
             onPlay={(notes)=>{
-              // Act as if last note of chord was tapped on handpan
-              const last=notes[notes.length-1];
               setActiveNotes(notes);
               setPanNotes(notes);
               setPanFiltering(true);
