@@ -90,7 +90,7 @@ export default function StickyHeader({ onHeight }) {
         fontSize:12, color:"#6a5a30", fontFamily:FONT, letterSpacing:.5,
         position:"relative", marginTop:6, willChange:"margin-top, padding-bottom, opacity", height:0, paddingBottom:"10px",
       }}>
-        find the harmony hiding in your hands
+        know your handpan
       </div>
     </div>
   );
