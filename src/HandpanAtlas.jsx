@@ -673,20 +673,30 @@ function FilterModal({open,onClose,filters,onChange,availableCats,availableChord
         onMouseUp={e=>endDrag(e.clientY)}
         onMouseLeave={e=>endDrag(e.clientY)}
         onTouchStart={e=>startDrag(e.touches[0].clientY)}
-        onTouchMove={e=>{e.preventDefault();moveDrag(e.touches[0].clientY);}}
+        onTouchMove={e=>{
+          if(panelRef.current&&panelRef.current.scrollTop>2){
+            dragging.current=false; dragStart.current=null; setDragY(0); return;
+          }
+          if(dragging.current){
+            const dy=e.touches[0].clientY-(dragStart.current||0);
+            if(dy>0){e.preventDefault();moveDrag(e.touches[0].clientY);}
+            else{dragging.current=false;dragStart.current=null;setDragY(0);}
+          }
+        }}
         onTouchEnd={e=>endDrag(e.changedTouches[0].clientY)}
         style={{
           position:"fixed",bottom:0,left:0,right:0,zIndex:201,
           background:"#181208",borderTop:"1px solid rgba(205,163,83,0.22)",
           borderRadius:"18px 18px 0 0",
-          maxHeight:"82vh",overflowY:"auto",fontFamily:FONT,
+          maxHeight:"85vh",overflowY:"auto",
+          WebkitOverflowScrolling:"touch",
+          fontFamily:FONT,
           transform: dragY > 0
             ? `translateY(${dragY}px)`
             : animIn ? "translateY(0)" : "translateY(100%)",
           transition: dragY > 0 ? "none" : "transform .32s cubic-bezier(.32,.72,.00,1.00)",
           boxShadow:"0 -12px 48px rgba(0,0,0,0.6)",
           userSelect:"none",
-          touchAction:"pan-x",
         }}>
         {/* Centred content wrapper — same max-width as the rest of the page */}
         <div style={{maxWidth:880,margin:"0 auto",padding:"20px 18px 36px"}}>
@@ -1575,17 +1585,41 @@ function HandpanBuilder({ open, onClose, onApply }) {
               <div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
                   {STANDARD_PANS.map(p=>(
-                    <button key={p.id} onClick={()=>setSelectedPreset(p.id)} style={{
-                      display:"flex",alignItems:"center",gap:5,
-                      background:selectedPreset===p.id?"rgba(205,163,83,0.18)":"rgba(255,255,255,0.04)",
+                    <div key={p.id} style={{display:"inline-flex",alignItems:"stretch",
                       border:`1px solid ${selectedPreset===p.id?"rgba(205,163,83,0.55)":"rgba(255,255,255,0.08)"}`,
-                      color:selectedPreset===p.id?"#ddc870":"#7a6a50",
-                      borderRadius:7,padding:"5px 12px",cursor:"pointer",fontSize:11,fontFamily:FONT,
-                    }}>
-                      <PanIcon size={12} style={{color:"currentColor"}}/>
-                      {p.sided==="double"&&<PanIcon size={12} style={{color:"currentColor"}}/>}
-                      <span>{p.name}</span>
-                    </button>
+                      borderRadius:7,overflow:"hidden",
+                      background:selectedPreset===p.id?"rgba(205,163,83,0.10)":"rgba(255,255,255,0.03)",
+                      transition:"all .15s",cursor:"pointer"}}
+                      onClick={()=>setSelectedPreset(p.id)}>
+                      <div style={{display:"flex",alignItems:"center",gap:5,padding:"5px 12px",
+                        fontSize:11,fontFamily:FONT,color:selectedPreset===p.id?"#ddc870":"#7a6a50"}}>
+                        <PanIcon size={12}/>
+                        {p.sided==="double"&&<PanIcon size={12}/>}
+                        <span>{p.name}</span>
+                      </div>
+                      <button onClick={e=>{
+                        e.stopPropagation();
+                        // Duplicate preset into build tab
+                        const panRings=p.rings&&!Array.isArray(p.rings)?p.rings:{upper:Array.isArray(p.rings)?p.rings:[{count:8,rotation:0}],bottom:[{count:6,rotation:0}]};
+                        const notes=p.notes.map(n=>{
+                          const posStr=p.positions?.[n.name];
+                          const parsed=parsePosV2(posStr,n.side||"upper");
+                          return{...n,size:n.size||"medium",pos:parsed.isDing?"ding":"ring",
+                            angle:parsed.isDing?null:parsed.angle,
+                            ringIdx:parsed.isDing?null:parsed.ringIdx,
+                            side:n.side||"upper"};
+                        });
+                        setBuild({...EMPTY_BUILD(),
+                          panName:p.name.replace(/\s*·\s*(A4=)?\d+(Hz)?$/,"")+" (copy)",
+                          a4:p.a4||440,sided:p.sided||"single",rings:panRings,buildNotes:notes,
+                        });
+                        setTab("build");
+                      }} style={{
+                        background:"rgba(160,160,220,0.10)",borderLeft:"1px solid rgba(255,255,255,0.07)",
+                        border:"none",color:"#a0b0e0",cursor:"pointer",padding:"0 10px",
+                        fontSize:10,fontFamily:FONT,
+                      }}>Edit</button>
+                    </div>
                   ))}
                 </div>
                 <div style={{display:"flex",justifyContent:"center",marginBottom:10}}>
@@ -1651,7 +1685,7 @@ function HandpanBuilder({ open, onClose, onApply }) {
                         : [{count:6,rotation:0}];
                       return (
                         <>
-                          <div style={{display:"flex",gap:8,justifyContent:"center",marginBottom:12,alignItems:"flex-start",width:"100%",overflow:"hidden"}}>
+                          <div style={{display:"flex",gap:4,justifyContent:"center",marginBottom:12,alignItems:"flex-start",width:"100%",overflow:"hidden"}}>
                             <div style={{flex:isDouble?"1 1 0":"0 0 auto",minWidth:0,textAlign:"center"}}>
                               {isDouble&&<div style={{fontSize:8,color:"#5a4a28",letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>Upper</div>}
                               <PreviewPan notes={upper} positions={pan.positions||{}}
@@ -2032,19 +2066,24 @@ export default function HandpanAtlas() {
   const panAvailableCats = useMemo(() => CAT_ORDER.filter(cat=>panChords.some(c=>c.cat===cat)), [panChords]);
 
   // Cards that contain ALL pan-lit notes (related highlight)
+  // Cards that contain all pan-tapped notes (for highlighting)
   const relatedKeys = useMemo(() => {
-    if (activeNotes.length === 0) return new Set();
-    return new Set(
-      panChords.filter(c => activeNotes.every(n => c.notes.includes(n))).map(c => c.key)
-    );
-  }, [activeNotes, panChords]);
+    if (activeNotes.length === 0 && !selectedKey) return new Set();
+    // When a card is selected, highlight cards sharing the same notes as that card
+    if (selectedKey) {
+      const card = panChords.find(c => c.key === selectedKey);
+      if (!card) return new Set();
+      const cardNoteSet = card.notes;
+      return new Set(panChords.filter(c => cardNoteSet.every(n => c.notes.includes(n))).map(c => c.key));
+    }
+    // When pan notes are active, highlight cards containing all of them
+    return new Set(panChords.filter(c => activeNotes.every(n => c.notes.includes(n))).map(c => c.key));
+  }, [activeNotes, selectedKey, panChords]);
 
   // ── note toggle ───────────────────────────────────────────────
   const handleNoteToggle = useCallback((noteName) => {
     setPanFiltering(true);
     setSelectedKey(null);
-    // Always play the note — whether activating or deactivating
-    // Use currentPan.freq first; fall back to computing from midi
     const freq = currentPan.freq?.[noteName] ||
       (() => { const n=currentPan.notes?.find(x=>x.name===noteName); return n?midiToFreq(n.midi,currentPan.a4||440):null; })();
     if (freq) { const ctx=getCtx(); synthNote(freq, ctx.currentTime, ctx, 0.44); }
@@ -2057,16 +2096,15 @@ export default function HandpanAtlas() {
     });
   }, [currentPan]);
 
-  // ── chord card click: highlight + sound, never touch the list ──
+  // ── chord card click: play + highlight only, never change list order ──
   const handleChordClick = (chord) => {
     playChord(chord.notes, strum ? 0.13 : 0, currentPan.freq);
     if (selectedKey === chord.key) {
-      setSelectedKey(null);
-      setActiveNotes(panMode ? panNotes : []);
+      setSelectedKey(null); // deselect — restore equal visibility
       return;
     }
     setSelectedKey(chord.key);
-    setActiveNotes(chord.notes);
+    // activeNotes intentionally NOT changed — list order stays the same
   };
 
   const showAll  = () => { setPanFiltering(false); setSelectedKey(null); };
@@ -2076,37 +2114,34 @@ export default function HandpanAtlas() {
   const filtered = useMemo(() => {
     let list = panChords;
 
-    // Always apply the regular filters first
-    const {noteCounts, cats, notes, chordNames} = filters;
-    if (noteCounts.length > 0)   list = list.filter(c => noteCounts.includes(c.noteCount));
-    if (cats.length > 0)         list = list.filter(c => cats.includes(c.cat));
-    if (notes.length > 0)        list = list.filter(c => notes.some(n => c.notes.includes(n)));
-    if (chordNames.length > 0)   list = list.filter(c => chordNames.includes(c.name));
-
-    // Then additionally narrow by pan-tapped notes (intersection)
     if (panMode) {
+      // In pan mode: only filter by pan notes (ignore noteCount/cat filters)
+      // so tapping 2 notes always shows 2-note chords even if filter says "3 notes"
       list = list.filter(c => panNotes.every(n => c.notes.includes(n)));
+    } else {
+      // Normal browse filters
+      const {noteCounts, cats, notes, chordNames} = filters;
+      if (noteCounts.length > 0)   list = list.filter(c => noteCounts.includes(c.noteCount));
+      if (cats.length > 0)         list = list.filter(c => cats.includes(c.cat));
+      if (notes.length > 0)        list = list.filter(c => notes.some(n => c.notes.includes(n)));
+      if (chordNames.length > 0)   list = list.filter(c => chordNames.includes(c.name));
     }
 
     if (search.trim()) {
       const q = search.toLowerCase().replace("♭","b").replace("♯","#").trim();
-      const tokens = q.split(/\s+/); // ["c", "minor"] or ["c3", "minor"] or ["minor"]
+      const tokens = q.split(/\s+/);
       list = list.filter(c => {
         const rootL = c.root.toLowerCase();
         const nameL = c.name.toLowerCase();
         const catL  = c.cat.toLowerCase();
-        const allText = `${rootL} ${nameL} ${catL} ${c.notes.join(" ").toLowerCase()}`;
-        // Every token must match somewhere in the chord's data
         return tokens.every(tok =>
-          rootL.includes(tok)  ||
-          nameL.includes(tok)  ||
-          catL.includes(tok)   ||
+          rootL.includes(tok) || nameL.includes(tok) || catL.includes(tok) ||
           c.notes.some(n=>n.toLowerCase().includes(tok)) ||
-          // match root pitch class without octave: "c" matches "c3", "c4", "c5"
           rootL.replace(/\d/,"").includes(tok)
         );
       });
     }
+
     if (filters.hideDuplicates) {
       const groups = new Map();
       for (const c of list) {
@@ -2121,8 +2156,31 @@ export default function HandpanAtlas() {
       }
       list = Array.from(groups.values()).map(g => g.chord);
     }
+
+    // Sort by relevance to active notes:
+    // 1. Exact match (chord notes === active notes set)
+    // 2. Contains all active notes (fewest extra notes first)
+    // 3. Rest
+    if (activeNotes.length > 0) {
+      const activeSet = new Set(activeNotes);
+      list = [...list].sort((a, b) => {
+        const aContainsAll = activeNotes.every(n => a.notes.includes(n));
+        const bContainsAll = activeNotes.every(n => b.notes.includes(n));
+        const aExact = aContainsAll && a.notes.length === activeNotes.length;
+        const bExact = bContainsAll && b.notes.length === activeNotes.length;
+        if (aExact && !bExact) return -1;
+        if (bExact && !aExact) return 1;
+        if (aContainsAll && !bContainsAll) return -1;
+        if (bContainsAll && !aContainsAll) return 1;
+        // Both contain all or neither — sort by how many active notes they share (desc)
+        const aMatch = a.notes.filter(n => activeSet.has(n)).length;
+        const bMatch = b.notes.filter(n => activeSet.has(n)).length;
+        return bMatch - aMatch;
+      });
+    }
+
     return list;
-  }, [panMode, panNotes, filters, search, panChords, currentPan]);
+  }, [panMode, panNotes, activeNotes, filters, search, panChords, currentPan]);
 
   const grouped = useMemo(() => {
     const g={};
@@ -2166,12 +2224,12 @@ export default function HandpanAtlas() {
         userSelect:"none",WebkitUserSelect:"none",
       }}>
         <div style={{maxWidth:600,margin:"0 auto",display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
-          {/* Builder button row */}
-          <div style={{width:"100%",display:"flex",justifyContent:"flex-start"}}>
+          {/* Top row: builder button + closest chord centered */}
+          <div style={{width:"100%",display:"flex",alignItems:"stretch",gap:8}}>
             <button onClick={()=>setBuilderOpen(true)} title="Open Handpan Workshop"
               style={{
                 background:"rgba(205,163,83,0.10)",border:"1px solid rgba(205,163,83,0.25)",
-                borderRadius:7,padding:"4px 9px",cursor:"pointer",
+                borderRadius:7,padding:"5px 10px",cursor:"pointer",flexShrink:0,
                 fontSize:10,color:"#c9a84c",fontFamily:FONT,
                 display:"flex",alignItems:"center",gap:4,
               }}>
@@ -2185,8 +2243,34 @@ export default function HandpanAtlas() {
                 <circle cx="3.3" cy="9.2" r="1.2" fill="currentColor" opacity=".7"/>
                 <circle cx="3.3" cy="4.8" r="1.2" fill="currentColor" opacity=".7"/>
               </svg>
-              <span>{currentPan.name||"C Minor"}</span>
+              <span style={{fontWeight:700,fontSize:13}}>{currentPan.name||"C Minor"}</span>
             </button>
+
+            <div style={{flex:1,display:"flex",justifyContent:"center"}}>
+              {activeNotes.length>=2&&(()=>{
+                const best = panChords.find(c=>activeNotes.every(n=>c.notes.includes(n))&&c.notes.length===activeNotes.length)
+                  || panChords.find(c=>activeNotes.every(n=>c.notes.includes(n)));
+                if(!best) return null;
+                const acc = CAT_STYLE[best.cat]?.accent||"#c9a84c";
+                return (
+                  <div style={{
+                    display:"flex",alignItems:"center",gap:6,
+                    background:`${acc}12`,border:`1px solid ${acc}33`,
+                    borderRadius:7,padding:"4px 12px",
+                    fontSize:11,fontFamily:FONT,
+                  }}>
+                    <span style={{color:acc,fontWeight:700,fontSize:13}}>{best.root.replace("b","♭")}</span>
+                    <span style={{color:`${acc}cc`}}>{best.name}</span>
+                    <span style={{fontSize:8,color:`${acc}66`}}>{best.noteCount}♩</span>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Invisible mirror of the button to keep chord truly centered */}
+            <div style={{visibility:"hidden",padding:"5px 10px",fontSize:13,fontWeight:700}}>
+              <span>{currentPan.name||"C Minor"}</span>
+            </div>
           </div>
           {/* Diagrams row — side by side if double-sided, scale to fit */}
           <div style={{display:"flex",gap:4,justifyContent:"center",alignItems:"flex-start",width:"100%",maxWidth:"100%",overflow:"hidden"}}>
@@ -2207,7 +2291,7 @@ export default function HandpanAtlas() {
               </div>
             )}
           </div>
-          {/* Fixed-height info row — always reserves space so the div never resizes */}
+          {/* Fixed-height info row */}
           <div style={{width:"100%",maxWidth:440,textAlign:"center",height:38,display:"flex",flexDirection:"column",justifyContent:"center"}}>
             {activeNotes.length>0?(
               <>
@@ -2362,57 +2446,78 @@ export default function HandpanAtlas() {
           </div>
         </div>
 
-        {/* ── GROUPED CHORD LIST ── */}
+        {/* ── CHORD LIST ── flat sorted when notes active, grouped when browsing */}
         <div style={{padding:"10px 0 72px"}}>
-          {panAvailableCats.map(cat=>{
-            const nameMap=grouped[cat];
-            if(!nameMap||Object.keys(nameMap).length===0) return null;
-            const s=CAT_STYLE[cat];
-            const sortedNames=Object.keys(nameMap).sort();
-            return (
-              <div key={cat} style={{marginBottom:28}}>
-                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,
-                  paddingBottom:7,borderBottom:`1px solid ${s.accent}22`}}>
-                  <div style={{width:8,height:8,borderRadius:"50%",background:s.accent,flexShrink:0}}/>
-                  <span style={{fontSize:11,color:s.accent,letterSpacing:3,textTransform:"uppercase",fontFamily:FONT,fontWeight:"600"}}>
-                    {s.label}
-                  </span>
-                  <span style={{fontSize:10,color:s.accent+"55",fontFamily:FONT}}>
-                    ({filtered.filter(c=>c.cat===cat).length})
-                  </span>
+          {activeNotes.length>0 ? (
+            /* Flat sorted list — most relevant first */
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(175px,100%),1fr))",gap:5}}>
+              {filtered.map(chord=>{
+                const isSel=selectedKey===chord.key;
+                const isRel=!isSel&&relatedKeys.has(chord.key);
+                // Only dim when pan notes are active and this card isn't related/selected
+                const isDimmed=activeNotes.length>0&&!isSel&&!isRel;
+                return (
+                  <ChordCard key={chord.key} chord={chord}
+                    isSelected={isSel} isRelated={isRel} dimmed={isDimmed}
+                    onClick={()=>handleChordClick(chord)}/>
+                );
+              })}
+              {filtered.length===0&&(
+                <div style={{gridColumn:"1/-1",textAlign:"center",padding:"48px 20px",color:"#3a2c0e",fontSize:13,fontStyle:"italic",fontFamily:FONT}}>
+                  No chord found for this combination. Try removing a note.
                 </div>
-
-                {sortedNames.map(chordName=>{
-                  const cards=nameMap[chordName];
-                  return (
-                    <div key={chordName} style={{marginBottom:12}}>
-                      <div style={{fontSize:9.5,color:s.accent+"88",letterSpacing:2,textTransform:"uppercase",
-                        fontFamily:FONT,fontWeight:"600",marginBottom:5,paddingLeft:2}}>{chordName}</div>
-                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(175px,100%),1fr))",gap:5}}>
-                        {cards.map(chord=>{
-                          const isSel=selectedKey===chord.key;
-                          const isRel=!isSel&&relatedKeys.has(chord.key)&&activeNotes.length>0;
-                          const isDimmed=activeNotes.length>0&&!panMode&&!isSel&&!isRel;
-                          return (
-                            <ChordCard key={chord.key} chord={chord}
-                              isSelected={isSel} isRelated={isRel} dimmed={isDimmed}
-                              onClick={()=>handleChordClick(chord)}/>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })}
-
-          {filtered.length===0&&(
-            <div style={{textAlign:"center",padding:"48px 20px",color:"#3a2c0e",fontSize:13,fontStyle:"italic",fontFamily:FONT}}>
-              {panMode
-                ?<><span>No chord found for this combination.</span><br/><span style={{fontSize:11}}>Try removing a note.</span></>
-                :"No chords match these filters."}
+              )}
             </div>
+          ) : (
+            /* Grouped by category when browsing */
+            <>
+              {panAvailableCats.map(cat=>{
+                const nameMap=grouped[cat];
+                if(!nameMap||Object.keys(nameMap).length===0) return null;
+                const s=CAT_STYLE[cat];
+                const sortedNames=Object.keys(nameMap).sort();
+                return (
+                  <div key={cat} style={{marginBottom:28}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,
+                      paddingBottom:7,borderBottom:`1px solid ${s.accent}22`}}>
+                      <div style={{width:8,height:8,borderRadius:"50%",background:s.accent,flexShrink:0}}/>
+                      <span style={{fontSize:11,color:s.accent,letterSpacing:3,textTransform:"uppercase",fontFamily:FONT,fontWeight:"600"}}>
+                        {s.label}
+                      </span>
+                      <span style={{fontSize:10,color:s.accent+"55",fontFamily:FONT}}>
+                        ({filtered.filter(c=>c.cat===cat).length})
+                      </span>
+                    </div>
+                    {sortedNames.map(chordName=>{
+                      const cards=nameMap[chordName];
+                      return (
+                        <div key={chordName} style={{marginBottom:12}}>
+                          <div style={{fontSize:9.5,color:s.accent+"88",letterSpacing:2,textTransform:"uppercase",
+                            fontFamily:FONT,fontWeight:"600",marginBottom:5,paddingLeft:2}}>{chordName}</div>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(175px,100%),1fr))",gap:5}}>
+                            {cards.map(chord=>{
+                              const isSel=selectedKey===chord.key;
+                              const isRel=!isSel&&relatedKeys.has(chord.key)&&activeNotes.length>0;
+                              const isDimmed=activeNotes.length>0&&!panMode&&!isSel&&!isRel;
+                              return (
+                                <ChordCard key={chord.key} chord={chord}
+                                  isSelected={isSel} isRelated={isRel} dimmed={isDimmed}
+                                  onClick={()=>handleChordClick(chord)}/>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+              {filtered.length===0&&(
+                <div style={{textAlign:"center",padding:"48px 20px",color:"#3a2c0e",fontSize:13,fontStyle:"italic",fontFamily:FONT}}>
+                  No chords match these filters.
+                </div>
+              )}
+            </>
           )}
         </div>
 
