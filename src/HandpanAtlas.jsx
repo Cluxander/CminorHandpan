@@ -848,12 +848,13 @@ function loadPans() {
 }
 
 // ── Freq from midi ──────────────────────────────────────────────
-function midiToFreq(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
+function midiToFreq(midi, a4=440) { return a4 * Math.pow(2, (midi - 69) / 12); }
 
 // ── Standard presets ────────────────────────────────────────────
 const STANDARD_PANS = [
   {
-    id:"c_minor", name:"C Minor (9 notes)",
+    id:"c_minor", name:"C Minor · 440Hz",
+    a4: 440,
     notes:[
       {name:"C3",midi:48},{name:"C4",midi:60},{name:"D4",midi:62},
       {name:"Eb4",midi:63},{name:"F4",midi:65},{name:"G4",midi:67},
@@ -1360,6 +1361,7 @@ const EMPTY_BUILD = () => ({
   editingId: null,
   sided:"single",
   activeSide:"upper",
+  a4: 440,
   rings:{ upper:[{count:8,rotation:0}], bottom:[{count:6,rotation:0}] },
   buildNotes:[],
   selectedNote:null,
@@ -1391,12 +1393,13 @@ function HandpanBuilder({ open, onClose, onApply }) {
   },[open]);
   if(!visible) return null;
 
-  const {panName,editingId,sided,activeSide,rings,buildNotes,selectedNote,showAddNote,newLetter,newOctave,newNoteSize,newNoteRing}=build;
+  const {panName,editingId,sided,activeSide,a4,rings,buildNotes,selectedNote,showAddNote,newLetter,newOctave,newNoteSize,newNoteRing}=build;
   const presetPan = STANDARD_PANS.find(p=>p.id===selectedPreset)||STANDARD_PANS[0];
 
-  function previewTap(n) {
+  function previewTap(n, overrideA4) {
     if(!n?.midi) return;
-    const ctx=getCtx(); synthNote(midiToFreq(n.midi),ctx.currentTime,ctx,0.44);
+    const useA4 = overrideA4 ?? a4;
+    const ctx=getCtx(); synthNote(midiToFreq(n.midi,useA4),ctx.currentTime,ctx,0.44);
     setPreviewNote(n.name); clearTimeout(previewTimer.current);
     previewTimer.current=setTimeout(()=>setPreviewNote(null),600);
   }
@@ -1458,15 +1461,17 @@ function HandpanBuilder({ open, onClose, onApply }) {
 
   function applyPreset(){
     const pan=STANDARD_PANS.find(p=>p.id===selectedPreset); if(!pan) return;
-    const freq={}; pan.notes.forEach(n=>{freq[n.name]=pan.freq?.[n.name]||midiToFreq(n.midi);});
-    onApply({notes:pan.notes,freq,positions:pan.positions,rings:pan.rings||{upper:[{count:8,rotation:0}],bottom:[{count:6,rotation:0}]},sided:pan.sided||"single",name:pan.name});
+    const panA4=pan.a4||440;
+    const freq={}; pan.notes.forEach(n=>{freq[n.name]=midiToFreq(n.midi,panA4);});
+    onApply({notes:pan.notes,freq,positions:pan.positions,rings:pan.rings||{upper:[{count:8,rotation:0}],bottom:[{count:6,rotation:0}]},sided:pan.sided||"single",name:pan.name,a4:panA4});
     onClose();
   }
   function applyCustom(){
     const pan=customPans.find(p=>p.id===selectedCustom); if(!pan) return;
-    const freq={}; pan.notes.forEach(n=>{freq[n.name]=pan.freq?.[n.name]||midiToFreq(n.midi);});
+    const panA4=pan.a4||440;
+    const freq={}; pan.notes.forEach(n=>{freq[n.name]=midiToFreq(n.midi,panA4);});
     const panRings=pan.rings&&!Array.isArray(pan.rings)?pan.rings:{upper:Array.isArray(pan.rings)?pan.rings:[{count:8,rotation:0}],bottom:[{count:6,rotation:0}]};
-    onApply({notes:pan.notes,freq,positions:pan.positions,rings:panRings,sided:pan.sided||"single",name:pan.name});
+    onApply({notes:pan.notes,freq,positions:pan.positions,rings:panRings,sided:pan.sided||"single",name:pan.name,a4:panA4});
     onClose();
   }
 
@@ -1479,7 +1484,7 @@ function HandpanBuilder({ open, onClose, onApply }) {
       const size=n.size||(NOTE_SIZES[n.size||"medium"]?n.size:"medium");
       return{...n,size,pos:p.isDing?"ding":"ring",angle:p.isDing?null:p.angle,ringIdx:p.isDing?null:p.ringIdx,side:n.side||"upper"};
     });
-    setBuild({...EMPTY_BUILD(),editingId:pan.id,panName:pan.name,sided:pan.sided||"single",rings:panRings,buildNotes:notes});
+    setBuild({...EMPTY_BUILD(),editingId:pan.id,panName:pan.name.replace(/\s*·\s*(A4=)?\d+(Hz)?$/,""),a4:pan.a4||440,sided:pan.sided||"single",rings:panRings,buildNotes:notes});
     setTab("build");
   }
 
@@ -1487,20 +1492,20 @@ function HandpanBuilder({ open, onClose, onApply }) {
     const realNotes=buildNotes.filter(n=>n.name!=="_ph"&&n.name!=="placeholder");
     if(!panName.trim()||realNotes.length<1) return;
     const notesSorted=[...realNotes].sort((a,b)=>a.midi-b.midi);
-    const freq={}; notesSorted.forEach(n=>{freq[n.name]=midiToFreq(n.midi);});
+    const freq={}; notesSorted.forEach(n=>{freq[n.name]=midiToFreq(n.midi,a4);});
     const positions=buildPosMap(buildNotes);
+    const effectiveSided = realNotes.some(n=>n.side==="bottom") ? "double" : "single";
+    const displayName=`${panName.trim()} · ${a4}Hz`;
     const existing=loadPans();
     let updated;
     if(editingId) {
-      // Overwrite existing pan
-      updated=existing.map(p=>p.id===editingId?{...p,name:panName.trim(),notes:notesSorted,freq,positions,rings,sided}:p);
+      updated=existing.map(p=>p.id===editingId?{...p,name:displayName,notes:notesSorted,freq,positions,rings,sided:effectiveSided,a4}:p);
     } else {
-      // New pan
-      const newPan={id:"custom_"+Date.now(),name:panName.trim(),notes:notesSorted,freq,positions,rings,sided};
+      const newPan={id:"custom_"+Date.now(),name:displayName,notes:notesSorted,freq,positions,rings,sided:effectiveSided,a4};
       updated=[...existing,newPan];
     }
     savePans(updated); setCustomPans(updated);
-    onApply({notes:notesSorted,freq,positions,rings,sided,name:panName.trim()});
+    onApply({notes:notesSorted,freq,positions,rings,sided:effectiveSided,name:displayName,a4});
     setBuild(EMPTY_BUILD()); onClose();
   }
 
@@ -1508,13 +1513,15 @@ function HandpanBuilder({ open, onClose, onApply }) {
     const realNotes=buildNotes.filter(n=>n.name!=="_ph"&&n.name!=="placeholder");
     if(!panName.trim()||realNotes.length<1) return;
     const notesSorted=[...realNotes].sort((a,b)=>a.midi-b.midi);
-    const freq={}; notesSorted.forEach(n=>{freq[n.name]=midiToFreq(n.midi);});
+    const freq={}; notesSorted.forEach(n=>{freq[n.name]=midiToFreq(n.midi,a4);});
     const positions=buildPosMap(buildNotes);
-    const newPan={id:"custom_"+Date.now(),name:panName.trim(),notes:notesSorted,freq,positions,rings,sided};
+    const effectiveSided = realNotes.some(n=>n.side==="bottom") ? "double" : "single";
+    const displayName=`${panName.trim()} · ${a4}Hz`;
+    const newPan={id:"custom_"+Date.now(),name:displayName,notes:notesSorted,freq,positions,rings,sided:effectiveSided,a4};
     const existing=loadPans();
     const updated=[...existing,newPan];
     savePans(updated); setCustomPans(updated);
-    onApply({notes:notesSorted,freq,positions,rings,sided,name:panName.trim()});
+    onApply({notes:notesSorted,freq,positions,rings,sided:effectiveSided,name:displayName,a4});
     setBuild(EMPTY_BUILD()); onClose();
   }
 
@@ -1585,7 +1592,7 @@ function HandpanBuilder({ open, onClose, onApply }) {
                   <PreviewPan notes={presetPan.notes} positions={presetPan.positions}
                     ringsUpper={presetPan.rings?.upper||presetPan.rings||[{count:8,rotation:0}]}
                     ringsBottom={presetPan.rings?.bottom||[{count:6,rotation:0}]}
-                    activeNote={previewNote} onNote={previewTap} size={260} sid="preset"/>
+                    activeNote={previewNote} onNote={n=>previewTap(n,presetPan.a4||440)} size={260} sid="preset"/>
                 </div>
                 <div style={{fontSize:9,color:"#4a3a18",textAlign:"center",marginBottom:14,fontStyle:"italic"}}>Tap a note to preview its sound</div>
                 <button onClick={applyPreset} style={{width:"100%",padding:"11px",background:"rgba(205,163,83,0.20)",border:"1px solid rgba(205,163,83,0.50)",color:"#e8d098",borderRadius:9,cursor:"pointer",fontSize:13,fontFamily:FONT,fontWeight:600}}>Use this handpan →</button>
@@ -1645,18 +1652,18 @@ function HandpanBuilder({ open, onClose, onApply }) {
                       return (
                         <>
                           <div style={{display:"flex",gap:8,justifyContent:"center",marginBottom:12,alignItems:"flex-start",width:"100%",overflow:"hidden"}}>
-                            <div style={{flex:"1 1 0",minWidth:0,textAlign:"center"}}>
+                            <div style={{flex:isDouble?"1 1 0":"0 0 auto",minWidth:0,textAlign:"center"}}>
                               {isDouble&&<div style={{fontSize:8,color:"#5a4a28",letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>Upper</div>}
                               <PreviewPan notes={upper} positions={pan.positions||{}}
                                 ringsUpper={panRingsUpper} ringsBottom={panRingsBottom}
-                                activeNote={previewNote} onNote={previewTap} size="100%" sid="myU"/>
+                                activeNote={previewNote} onNote={n=>previewTap(n,pan.a4||440)} size={260} sid="myU"/>
                             </div>
                             {isDouble&&(
                               <div style={{flex:"1 1 0",minWidth:0,textAlign:"center"}}>
                                 <div style={{fontSize:8,color:"#5a4a28",letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>Bottom</div>
                                 <PreviewPan notes={bottom} positions={pan.positions||{}}
                                   ringsUpper={panRingsUpper} ringsBottom={panRingsBottom}
-                                  activeNote={previewNote} onNote={previewTap} size="100%" sid="myB"/>
+                                  activeNote={previewNote} onNote={n=>previewTap(n,pan.a4||440)} size={260} sid="myB"/>
                               </div>
                             )}
                           </div>
@@ -1807,7 +1814,7 @@ function HandpanBuilder({ open, onClose, onApply }) {
                       <div style={{display:"flex",gap:5,alignItems:"center"}}>
                         <Dropdown value={newLetter} onChange={l=>setB("newLetter",l)} options={letterOpts} style={{flex:1}}/>
                         <Dropdown value={newOctave} onChange={o=>setB("newOctave",o)} options={octaveOpts} style={{width:88}}/>
-                        <button onClick={()=>{const midi=12+newOctave*12+SEMITONE_NAMES.indexOf(newLetter);const ctx=getCtx();synthNote(midiToFreq(midi),ctx.currentTime,ctx,.44);}}
+                        <button onClick={()=>{const midi=12+newOctave*12+SEMITONE_NAMES.indexOf(newLetter);const ctx=getCtx();synthNote(midiToFreq(midi,a4),ctx.currentTime,ctx,.44);}}
                           style={{background:"rgba(205,163,83,0.12)",border:"1px solid rgba(205,163,83,0.30)",color:"#c9a84c",borderRadius:6,padding:"6px 10px",cursor:"pointer",fontSize:12}}>▶</button>
                       </div>
                     </div>
@@ -1914,6 +1921,20 @@ function HandpanBuilder({ open, onClose, onApply }) {
                   <div style={{fontSize:9,color:"#6a5a30",letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>
                     {editingId?"Save changes":"Save &amp; use"}
                   </div>
+
+                  {/* A4 frequency */}
+                  <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:10,
+                    background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",
+                    borderRadius:8,padding:"8px 12px"}}>
+                    <span style={{fontSize:9,color:"#6a5a30",letterSpacing:1,whiteSpace:"nowrap"}}>A4 tuning</span>
+                    <Slider min={400} max={499} step={1} value={a4}
+                      onChange={v=>setB("a4",v)} label={`${a4} Hz`}/>
+                    <button onClick={()=>setB("a4",440)} style={{
+                      background:"rgba(205,163,83,0.10)",border:"1px solid rgba(205,163,83,0.25)",
+                      color:"#c9a84c",borderRadius:5,padding:"2px 8px",cursor:"pointer",
+                      fontSize:9,fontFamily:FONT,flexShrink:0,
+                    }}>Reset</button>
+                  </div>
                   <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                     <input value={panName} onChange={e=>setB("panName",e.target.value)} placeholder="Name your handpan…"
                       style={{flex:1,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:7,padding:"7px 12px",color:"#d4c8a8",fontSize:12,fontFamily:FONT,outline:"none"}}/>
@@ -1992,6 +2013,7 @@ export default function HandpanAtlas() {
       rings,
       sided: pan.sided || "single",
       name:  pan.name,
+      a4:    pan.a4 || 440,
     };
     setCurrentPan(newPan);
     try { localStorage.setItem("hp_last_pan", JSON.stringify(newPan)); } catch(e){}
@@ -2024,7 +2046,7 @@ export default function HandpanAtlas() {
     // Always play the note — whether activating or deactivating
     // Use currentPan.freq first; fall back to computing from midi
     const freq = currentPan.freq?.[noteName] ||
-      (() => { const n=currentPan.notes?.find(x=>x.name===noteName); return n?midiToFreq(n.midi):null; })();
+      (() => { const n=currentPan.notes?.find(x=>x.name===noteName); return n?midiToFreq(n.midi,currentPan.a4||440):null; })();
     if (freq) { const ctx=getCtx(); synthNote(freq, ctx.currentTime, ctx, 0.44); }
     setActiveNotes(prev => {
       const was = prev.includes(noteName);
