@@ -605,7 +605,7 @@ g {
 
 .hp-chord-type-section .hp-chord-grid {
   grid-template-columns: 1fr;
-  gap: 4px;
+  gap: 0px;
 }
 
 .hp-chord-type-name {
@@ -630,6 +630,8 @@ g {
   display: flex;               /* row: content left, cycle button right */
   align-items: stretch;
   overflow: hidden;
+  margin-top: 5px;
+  margin-bottom: 5px;
 }
 
 .hp-chord-card--default {
