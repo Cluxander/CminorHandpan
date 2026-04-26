@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { FONT } from "../constants/colors.js";
-import { getCtx, synthNote, playChord, BPM, BEAT_SEC } from "../audio/synth.js";
+import { getCtx, synthNote, playChord, playSlap, BEAT_SEC } from "../audio/synth.js";
 
 const TIME_SIGS = [2, 3, 4, 5];
 
@@ -16,56 +15,166 @@ export default function SavedChordsStrip({ chords, onChords, strum, freqMap, onP
 
   const beatsPerBar = TIME_SIGS[timeSigIdx];
 
+  const [BMP, setBMP] = useState(60);
+  // Inside your playProgression component
+  const [metronomeActive, setMetronomeActive] = useState(false);
+  const metronomeRef = useRef(false);
+
+// Keep ref in sync
+useEffect(() => { metronomeRef.current = metronomeActive; }, [metronomeActive]);
+  
+  const handleBpmChange = (e) => {
+      // 1. Get the value from the input
+      let value = parseInt(e.target.value);
+  
+      // 2. Handle empty input (if user deletes everything to type a new number)
+      if (isNaN(value)) {
+          setBMP(""); // Allow the input to be empty while typing
+          return;
+      }
+  
+      if (value > 180) value = 180;
+      if (value < 40) value = 40;
+  
+      setBMP(value);
+  };
+  
+  const handleBlur = () => {
+      if (BMP < 40 || BMP === "") {
+          setBMP(40);
+      }
+  };
+
   function cycleTimeSig() { setTimeSigIdx(i => (i + 1) % TIME_SIGS.length); }
 
-  const loopIdRef = useRef(0);
-  const allTimers = useRef([]);
+
 
   function cancelAll() { allTimers.current.forEach(id => clearTimeout(id)); allTimers.current = []; }
   function sched(fn, delayMs) { const id = setTimeout(fn, delayMs); allTimers.current.push(id); return id; }
 
-  function playProgression() {
-    if (playingProg) {
-      loopIdRef.current++;
-      cancelAll();
-      setPlayingProg(false);
-      onProgHighlight && onProgHighlight(null);
-      return;
-    }
+
+
+
+  const bpmRef = useRef(BMP);
+const loopIdRef = useRef(0);
+const allTimers = useRef([]);
+
+function playProgression() {
+  // STOP LOGIC
+  if (playingProg) {
+    loopIdRef.current++; // Change ID so any pending playLoop dies
     cancelAll();
-    loopIdRef.current++;
-    const myId = loopIdRef.current;
-    setPlayingProg(true);
-
-    function playLoop() {
-      if (loopIdRef.current !== myId) return;
-      let beatOffset = 0;
-      chords.forEach(c => {
-        const notesInChord = c.notes.length;
-        if (strum) {
-          c.notes.forEach((note, ni) => {
-            sched(() => {
-              if (loopIdRef.current !== myId) return;
-              const f = freqMap[note];
-              if (f) { const ctx = getCtx(); synthNote(f, ctx.currentTime, ctx, 0.55); }
-              onProgHighlight && onProgHighlight([note]);
-            }, Math.round((beatOffset + ni) * BEAT_SEC * 1000));
-          });
-        } else {
-          sched(() => {
-            if (loopIdRef.current !== myId) return;
-            playChord(c.notes, false, freqMap);
-            onProgHighlight && onProgHighlight(c.notes);
-          }, Math.round(beatOffset * BEAT_SEC * 1000));
-        }
-        beatOffset += Math.ceil(notesInChord / beatsPerBar) * beatsPerBar;
-      });
-      sched(() => { if (loopIdRef.current === myId) playLoop(); }, Math.round(beatOffset * BEAT_SEC * 1000));
-    }
-
-    playLoop();
+    setPlayingProg(false);
+    onProgHighlight && onProgHighlight(null);
+    return;
   }
 
+  // START LOGIC
+  cancelAll();
+  loopIdRef.current++;
+  const myId = loopIdRef.current;
+  setPlayingProg(true);
+
+  function playLoop(index) {
+    if (loopIdRef.current !== myId) return;
+  
+    const c = chords[index];
+    const safeBPM = bpmRef.current > 0 ? bpmRef.current : 60;
+    const currentBpmMs = 60000 / safeBPM;
+    
+    const notesInChord = c.notes.length;
+    const allocatedBeats = Math.ceil(notesInChord / beatsPerBar) * beatsPerBar;
+  
+    // 1. Play the chord as usual
+    if (strum) {
+      c.notes.forEach((note, ni) => {
+        const strumDelay = Math.round(ni * BEAT_SEC * currentBpmMs);
+        sched(() => {
+          if (loopIdRef.current !== myId) return;
+          const f = freqMap[note];
+          if (f) { 
+            const ctx = getCtx(); 
+            synthNote(f, ctx.currentTime, ctx, 0.55); 
+          }
+          onProgHighlight && onProgHighlight([note]);
+        }, strumDelay);
+      });
+    } else {
+      playChord(c.notes, false, freqMap);
+      onProgHighlight && onProgHighlight(c.notes);
+    }
+  
+    // 2. METRONOME/SLAP LOGIC
+    // If metronome is on, play slaps on the empty beats of this segment
+    if (metronomeRef.current) {
+      // Start slaps AFTER the notes are done
+      for (let b = notesInChord; b < allocatedBeats; b++) {
+        const slapDelay = Math.round(b * BEAT_SEC * currentBpmMs);
+        sched(() => {
+          if (loopIdRef.current !== myId) return;
+          const ctx = getCtx();
+          playSlap(ctx.currentTime, ctx, 0.1);
+        }, slapDelay);
+      }
+    }
+  
+    const msUntilNextChord = Math.round(allocatedBeats * BEAT_SEC * currentBpmMs);
+    sched(() => {
+      if (loopIdRef.current === myId) playLoop((index + 1) % chords.length);
+    }, msUntilNextChord);
+  }
+
+  // Start the first iteration
+  playLoop(0);
+}
+
+// Sync the ref with state
+useEffect(() => {
+  bpmRef.current = BMP;
+}, [BMP]);
+
+  // function playProgression() {
+  //   if (playingProg) {
+  //     loopIdRef.current++;
+  //     cancelAll();
+  //     setPlayingProg(false);
+  //     onProgHighlight && onProgHighlight(null);
+  //     return;
+  //   }
+  //   cancelAll();
+  //   loopIdRef.current++;
+  //   const myId = loopIdRef.current;
+  //   setPlayingProg(true);
+
+  //   function playLoop() {
+  //     if (loopIdRef.current !== myId) return;
+  //     let beatOffset = 0;
+  //     chords.forEach(c => {
+  //       const notesInChord = c.notes.length;
+  //       if (strum) {
+  //         c.notes.forEach((note, ni) => {
+  //           sched(() => {
+  //             if (loopIdRef.current !== myId) return;
+  //             const f = freqMap[note];
+  //             if (f) { const ctx = getCtx(); synthNote(f, ctx.currentTime, ctx, 0.55); }
+  //             onProgHighlight && onProgHighlight([note]);
+  //           }, Math.round((beatOffset + ni) * BEAT_SEC * BPM_time));
+  //         });
+  //       } else {
+  //         sched(() => {
+  //           if (loopIdRef.current !== myId) return;
+  //           playChord(c.notes, false, freqMap);
+  //           onProgHighlight && onProgHighlight(c.notes);
+  //         }, Math.round(beatOffset * BEAT_SEC * BPM_time));
+  //       }
+  //       beatOffset += Math.ceil(notesInChord / beatsPerBar) * beatsPerBar;
+  //     });
+  //     sched(() => { if (loopIdRef.current === myId) playLoop(); }, Math.round(beatOffset * BEAT_SEC * BPM_time));
+  //   }
+
+  //   playLoop();
+  // }
+////////////
   function onPointerDown(e, i) {
     e.preventDefault();
     pointerItem.current = { index:i, startX:e.clientX, startY:e.clientY, moved:false };
@@ -92,7 +201,7 @@ export default function SavedChordsStrip({ chords, onChords, strum, freqMap, onP
       else if (!chip) { setOverDelete(false); }
     }
 
-    function onPointerUp(e) {
+    function onPointerUp(_e) {
       if (pointerItem.current == null) return;
       document.body.style.overflow = "";
       if (!pointerItem.current.moved) {
@@ -119,49 +228,78 @@ export default function SavedChordsStrip({ chords, onChords, strum, freqMap, onP
   }, [chords, dragOver, overDelete, onChords, onPlay]);
 
   return (
-    <div ref={containerRef} style={{ padding:"8px 0 0",userSelect:"none",WebkitUserSelect:"none",touchAction:"none" }}>
-      <div style={{ display:"flex",gap:6,flexWrap:"wrap",alignItems:"center" }}>
-        <span style={{ fontSize:8,color:"#5a4a28",letterSpacing:3,textTransform:"uppercase",flexShrink:0 }}>Saved</span>
+    <div ref={containerRef} className="hp-saved-strip">
+      <div className="hp-saved-strip__row">
+        <span className="hp-saved-strip__label">Saved</span>
 
-        {chords.map((c, i) => (
-          <div key={c.key}
-            data-chord-idx={i}
-            onPointerDown={e => onPointerDown(e, i)}
-            style={{
-              display:"flex",gap:3,alignItems:"center",
-              background:dragging===i?"rgba(160,120,200,0.35)":dragOver===i?"rgba(160,120,200,0.28)":"rgba(160,120,200,0.12)",
-              border:`1px solid ${dragging===i?"rgba(160,120,200,0.80)":dragOver===i?"rgba(160,120,200,0.60)":"rgba(160,120,200,0.30)"}`,
-              color:"#c0a0e0",borderRadius:7,padding:"4px 9px",cursor:"grab",
-              fontSize:10,fontFamily:"monospace",touchAction:"none",
-              opacity:dragging===i?0.45:1,
-              transform:dragOver===i&&dragging!==i?"scale(1.06)":"none",
-              transition:"transform .1s, opacity .1s",
-            }}>
-            <span style={{ fontSize:9,opacity:.35,marginRight:1 }}>⠿</span>
-            {c.notes.map(n => n.replace("b","♭")).join(" ")}
-          </div>
-        ))}
+        {chords.map((c, i) => {
+          let chipClass = "hp-saved-chip";
+          if (dragging === i) chipClass += " hp-saved-chip--dragging";
+          else if (dragOver === i) chipClass += " hp-saved-chip--dragover";
+          else chipClass += " hp-saved-chip--default";
+          return (
+            <div key={c.key}
+              data-chord-idx={i}
+              onPointerDown={e => onPointerDown(e, i)}
+              className={chipClass}>
+              <span className="hp-saved-chip__handle">⠿</span>
+              {c.notes.map(n => n.replace("b","♭")).join(" ")}
+            </div>
+          );
+        })}
 
         {dragging != null && (
-          <div data-delete-zone="1" style={{ padding:"4px 10px",borderRadius:6,fontSize:9,fontFamily:FONT,background:overDelete?"rgba(200,60,60,0.35)":"rgba(140,45,45,0.10)",border:`1px dashed ${overDelete?"rgba(240,80,80,0.9)":"rgba(160,55,55,0.40)"}`,color:overDelete?"#ff9090":"#a85858",transition:"all .15s" }}>🗑 Drop to delete</div>
+          <div data-delete-zone="1"
+            className={`hp-saved-delete-zone ${overDelete ? "hp-saved-delete-zone--over" : "hp-saved-delete-zone--idle"}`}>
+            🗑 Drop to delete
+          </div>
         )}
 
         {chords.length >= 2 && dragging == null && (
           <>
-            <button onClick={cycleTimeSig} title="Change time signature" style={{ background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)",color:"#a09070",borderRadius:6,padding:"3px 9px",cursor:"pointer",fontSize:9,fontFamily:FONT,flexShrink:0,touchAction:"manipulation",fontVariantNumeric:"tabular-nums",letterSpacing:.5 }}>{TIME_SIGS[timeSigIdx]}/4</button>
-            <button onClick={playProgression} style={{ background:playingProg?"rgba(205,163,83,0.30)":"rgba(205,163,83,0.12)",border:`1px solid rgba(205,163,83,${playingProg?".70":".35"})`,color:playingProg?"#f0d078":"#c9a84c",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:9,fontFamily:FONT,flexShrink:0,touchAction:"manipulation" }}>{playingProg?"◼ Stop":"▶▶ Play all"}</button>
+            <button onClick={cycleTimeSig} title="Change time signature"
+              className="hp-btn-time-sig">
+              {TIME_SIGS[timeSigIdx]}/4
+            </button>
+            {/* ----------------------------------------------------------------- ADDED AL */}
+            <div className="hp-bpm-wrapper">
+              <span className="hp-bpm-label">BPM</span>
+              <input 
+                type="number" 
+                value={BMP} 
+                onChange={handleBpmChange}
+                onBlur={handleBlur}
+                className="hp-bpm-input"
+                placeholder="--"
+              />
+            </div>
+            <button 
+              onClick={() => setMetronomeActive(!metronomeActive)}
+              className={`hp-metronome-btn ${metronomeActive ? 'active' : ''}`}
+              title="Toggle Metronome Slap"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 2l3 7h-6l3-7zM12 9v13M5 22h14" />
+              </svg>
+            </button>
+                        {/* ----------------------------------------------------------------- ADDED AL */}
+            <button onClick={playProgression}
+              className={`hp-btn-play-prog ${playingProg ? "hp-btn-play-prog--playing" : "hp-btn-play-prog--idle"}`}>
+              {playingProg?"◼ Stop":"▶▶ Play all"}
+            </button>
           </>
         )}
+
 
         <button onClick={() => {
           cancelAll(); setPlayingProg(false);
           onChords([]);
           try { localStorage.removeItem("hp_saved_chords"); } catch(e){}
-        }} style={{ background:"rgba(140,45,45,0.12)",border:"1px solid rgba(140,45,45,0.25)",color:"#a85858",borderRadius:6,padding:"3px 8px",cursor:"pointer",fontSize:9,fontFamily:FONT,touchAction:"manipulation" }}>↺ Clear</button>
+        }} className="hp-btn-clear-saved">↺ Clear</button>
       </div>
 
       {dragging != null && ghostPos && (
-        <div style={{ position:"fixed",pointerEvents:"none",zIndex:9999,left:ghostPos.x+10,top:ghostPos.y-14,background:"rgba(160,120,200,0.90)",borderRadius:7,padding:"4px 9px",fontSize:10,fontFamily:"monospace",color:"#fff",boxShadow:"0 4px 16px rgba(0,0,0,0.5)" }}>
+        <div className="hp-drag-ghost" style={{ left: ghostPos.x + 10, top: ghostPos.y - 14 }}>
           {chords[dragging]?.notes.map(n => n.replace("b","♭")).join(" ")}
         </div>
       )}

@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from "react";
-import { FONT } from "../../constants/colors.js";
 import { NOTE_SIZES, SEMITONE_NAMES, STANDARD_PANS, MIDI_TO_NAME } from "../../constants/handpan.js";
 import { getCtx, synthNote } from "../../audio/synth.js";
 import { midiToFreq, getSnapAngles, parsePosV2, buildPosMap } from "../../utils/geometry.js";
@@ -189,15 +188,18 @@ export default function HandpanBuilder({ open, onClose, onApply }) {
     setBuild(EMPTY_BUILD()); onClose();
   }
 
-  const BtnT = ({ active, onClick, children, color }) => (
-    <button onClick={onClick} style={{
-      background: active ? (color ? "rgba(100,200,130,0.18)" : "rgba(205,163,83,0.18)") : "rgba(255,255,255,0.04)",
-      border:`1px solid ${active ? (color||"rgba(205,163,83,0.55)") : "rgba(255,255,255,0.08)"}`,
-      color: active ? (color||"#ddc870") : "#7a6a50",
-      borderRadius:7, padding:"5px 12px", cursor:"pointer", fontSize:11, fontFamily:FONT,
-      transition:"all .14s", whiteSpace:"nowrap",
-    }}>{children}</button>
-  );
+  // Tab button helper
+  const BtnT = ({ active, onClick, children, color }) => {
+    let cls = "hp-builder-tab";
+    if (active) {
+      if (color === "#80d090") cls += " hp-builder-tab--active-green";
+      else if (color === "#a0b0e0") cls += " hp-builder-tab--active-blue";
+      else cls += " hp-builder-tab--active";
+    } else {
+      cls += " hp-builder-tab--inactive";
+    }
+    return <button onClick={onClick} className={cls}>{children}</button>;
+  };
 
   const letterOpts = SEMITONE_NAMES.map(l => ({ value:l, label:l.replace("b","♭").replace("#","♯") }));
   const octaveOpts = [1,2,3,4,5,6,7].map(o => ({ value:o, label:`Octave ${o}` }));
@@ -208,22 +210,25 @@ export default function HandpanBuilder({ open, onClose, onApply }) {
 
   return (
     <>
-      <div onClick={onClose} style={{ position:"fixed",inset:0,zIndex:300,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(4px)",opacity:animIn?1:0,transition:"opacity .35s ease" }}/>
-      <div style={{ position:"fixed",inset:0,zIndex:301,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none",padding:"16px" }}>
-        <div style={{ background:"#141108",border:"1px solid rgba(205,163,83,0.22)",borderRadius:16,width:"100%",maxWidth:880,maxHeight:"92vh",overflowY:"auto",fontFamily:FONT,pointerEvents:"all",
-          opacity:animIn?1:0,transform:animIn?"scale(1) translateY(0)":"scale(.96) translateY(16px)",
-          transition:"opacity .35s ease, transform .35s cubic-bezier(.32,.72,0,1)",boxShadow:"0 24px 80px rgba(0,0,0,0.75)" }}>
+      <div onClick={onClose} className="hp-builder-backdrop"
+        style={{ opacity: animIn ? 1 : 0 }}/>
+      <div className="hp-builder-outer">
+        <div className="hp-builder-panel"
+          style={{
+            opacity: animIn ? 1 : 0,
+            transform: animIn ? "scale(1) translateY(0)" : "scale(.96) translateY(16px)",
+          }}>
 
-          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"18px 22px 14px",borderBottom:"1px solid rgba(205,163,83,0.12)" }}>
+          <div className="hp-builder-header">
             <div>
-              <div style={{ fontSize:17,color:"#e8d098",fontWeight:700 }}>Handpan Workshop</div>
-              <div style={{ fontSize:9,color:"#5a4a28",letterSpacing:3,textTransform:"uppercase",marginTop:2 }}>Select or build your instrument</div>
+              <div className="hp-builder-header__title">Handpan Workshop</div>
+              <div className="hp-builder-header__sub">Select or build your instrument</div>
             </div>
-            <button onClick={onClose} style={{ background:"none",border:"none",color:"#6a5830",fontSize:20,cursor:"pointer",padding:"4px 8px",lineHeight:1 }}>✕</button>
+            <button onClick={onClose} className="hp-builder-header__close">✕</button>
           </div>
 
-          <div style={{ padding:"16px 22px 28px" }}>
-            <div style={{ display:"flex",gap:6,marginBottom:20,flexWrap:"wrap" }}>
+          <div className="hp-builder-body">
+            <div className="hp-builder-tabs">
               <BtnT active={tab==="preset"} onClick={() => setTab("preset")}>🎵 Standard</BtnT>
               <BtnT active={tab==="custom"} color="#80d090"
                 onClick={() => { const f=loadPans(); setCustomPans(f); setTab("custom"); if(!selectedCustom&&f.length) setSelectedCustom(f[0].id); }}>
@@ -234,134 +239,186 @@ export default function HandpanBuilder({ open, onClose, onApply }) {
 
             {/* ── PRESET ── */}
             {tab === "preset" && (
-              <div>
-                <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginBottom:16 }}>
-                  {STANDARD_PANS.map(p => (
-                    <div key={p.id} style={{ display:"inline-flex",alignItems:"stretch",
-                      border:`1px solid ${selectedPreset===p.id?"rgba(205,163,83,0.55)":"rgba(255,255,255,0.08)"}`,
-                      borderRadius:7,overflow:"hidden",
-                      background:selectedPreset===p.id?"rgba(205,163,83,0.10)":"rgba(255,255,255,0.03)",
-                      transition:"all .15s",cursor:"pointer" }}
-                      onClick={() => setSelectedPreset(p.id)}>
-                      <div style={{ display:"flex",alignItems:"center",gap:5,padding:"5px 12px",
-                        fontSize:11,fontFamily:FONT,color:selectedPreset===p.id?"#ddc870":"#7a6a50" }}>
-                        <PanIcon size={12}/>
-                        {p.sided === "double" && <PanIcon size={12}/>}
-                        <span>{p.name}</span>
+              <div className="hp-builder-tab-layout">
+                {/* LEFT: handpan preview */}
+                <div className="hp-builder-tab-left">
+                  <div className="hp-preview-center">
+                    <PreviewPan notes={presetPan.notes} positions={presetPan.positions}
+                      ringsUpper={presetPan.rings?.upper||presetPan.rings||[{count:8,rotation:0}]}
+                      ringsBottom={presetPan.rings?.bottom||[{count:6,rotation:0}]}
+                      activeNote={previewNote} onNote={n => previewTap(n, presetPan.a4||440)} size={260} sid="preset"/>
+                  </div>
+                  <div className="hp-preset-hint">Tap a note to preview its sound</div>
+                </div>
+                {/* RIGHT: preset list + action */}
+                <div className="hp-builder-tab-right">
+                  <div className="hp-preset-list">
+                    {STANDARD_PANS.map(p => (
+                      <div key={p.id}
+                        className={`hp-preset-item ${selectedPreset===p.id ? "hp-preset-item--selected" : "hp-preset-item--default"}`}
+                        onClick={() => setSelectedPreset(p.id)}>
+                        <div className={`hp-preset-item__label ${selectedPreset===p.id ? "hp-preset-item__label--selected" : "hp-preset-item__label--default"}`}>
+                          <PanIcon size={12}/>
+                          {p.sided === "double" && <PanIcon size={12}/>}
+                          <span>{p.name}</span>
+                        </div>
+                        <button onClick={e => {
+                          e.stopPropagation();
+                          const panRings = p.rings && !Array.isArray(p.rings) ? p.rings : { upper:Array.isArray(p.rings)?p.rings:[{count:8,rotation:0}], bottom:[{count:6,rotation:0}] };
+                          const notes = p.notes.map(n => {
+                            const posStr = p.positions?.[n.name];
+                            const parsed = parsePosV2(posStr, n.side||"upper");
+                            return { ...n, size:n.size||"medium", pos:parsed.isDing?"ding":"ring", angle:parsed.isDing?null:parsed.angle, ringIdx:parsed.isDing?null:parsed.ringIdx, side:n.side||"upper" };
+                          });
+                          setBuild({ ...EMPTY_BUILD(), panName:p.name.replace(/\s*·\s*(A4=)?\d+(Hz)?$/,"")+" (copy)", a4:p.a4||440, sided:p.sided||"single", rings:panRings, buildNotes:notes });
+                          setTab("build");
+                        }} className="hp-preset-item__edit-btn">Edit</button>
                       </div>
-                      <button onClick={e => {
-                        e.stopPropagation();
-                        const panRings = p.rings && !Array.isArray(p.rings) ? p.rings : { upper:Array.isArray(p.rings)?p.rings:[{count:8,rotation:0}], bottom:[{count:6,rotation:0}] };
-                        const notes = p.notes.map(n => {
-                          const posStr = p.positions?.[n.name];
-                          const parsed = parsePosV2(posStr, n.side||"upper");
-                          return { ...n, size:n.size||"medium", pos:parsed.isDing?"ding":"ring", angle:parsed.isDing?null:parsed.angle, ringIdx:parsed.isDing?null:parsed.ringIdx, side:n.side||"upper" };
-                        });
-                        setBuild({ ...EMPTY_BUILD(), panName:p.name.replace(/\s*·\s*(A4=)?\d+(Hz)?$/,"")+" (copy)", a4:p.a4||440, sided:p.sided||"single", rings:panRings, buildNotes:notes });
-                        setTab("build");
-                      }} style={{ background:"rgba(160,160,220,0.10)",borderLeft:"1px solid rgba(255,255,255,0.07)",border:"none",color:"#a0b0e0",cursor:"pointer",padding:"0 10px",fontSize:10,fontFamily:FONT }}>Edit</button>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                  <button onClick={applyPreset} className="hp-btn-use-preset">Use this handpan →</button>
                 </div>
-                <div style={{ display:"flex",justifyContent:"center",marginBottom:10 }}>
-                  <PreviewPan notes={presetPan.notes} positions={presetPan.positions}
-                    ringsUpper={presetPan.rings?.upper||presetPan.rings||[{count:8,rotation:0}]}
-                    ringsBottom={presetPan.rings?.bottom||[{count:6,rotation:0}]}
-                    activeNote={previewNote} onNote={n => previewTap(n, presetPan.a4||440)} size={260} sid="preset"/>
-                </div>
-                <div style={{ fontSize:9,color:"#4a3a18",textAlign:"center",marginBottom:14,fontStyle:"italic" }}>Tap a note to preview its sound</div>
-                <button onClick={applyPreset} style={{ width:"100%",padding:"11px",background:"rgba(205,163,83,0.20)",border:"1px solid rgba(205,163,83,0.50)",color:"#e8d098",borderRadius:9,cursor:"pointer",fontSize:13,fontFamily:FONT,fontWeight:600 }}>Use this handpan →</button>
               </div>
             )}
 
             {/* ── MY PANS ── */}
             {tab === "custom" && (
-              <div>
-                {customPans.length === 0 ? (
-                  <div style={{ textAlign:"center",padding:"32px 0",color:"#4a3a18",fontStyle:"italic",fontSize:13 }}>No custom pans yet. Use the Build tab to create one.</div>
-                ) : (
-                  <>
-                    <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginBottom:18 }}>
-                      {customPans.map(p => (
-                        <div key={p.id} onClick={() => setSelectedCustom(p.id)} style={{
-                          display:"inline-flex",alignItems:"stretch",
-                          border:`1px solid ${selectedCustom===p.id?"rgba(100,200,130,0.55)":"rgba(255,255,255,0.08)"}`,
-                          borderRadius:8,overflow:"hidden",cursor:"pointer",
-                          background:selectedCustom===p.id?"rgba(100,200,130,0.10)":"rgba(255,255,255,0.03)",
-                          transition:"all .15s",
-                        }}>
-                          <div style={{ display:"flex",alignItems:"center",gap:4,padding:"7px 10px",fontSize:12,color:selectedCustom===p.id?"#80d090":"#9a8a60",fontFamily:FONT,fontWeight:500 }}>
-                            <PanIcon size={11}/>
-                            {p.sided === "double" && <PanIcon size={11}/>}
-                            <span>{p.name}</span>
-                          </div>
-                          <button onClick={e => { e.stopPropagation(); editCustom(p); }} style={{ background:"rgba(160,160,220,0.10)",borderLeft:"1px solid rgba(255,255,255,0.07)",border:"none",color:"#a0b0e0",cursor:"pointer",padding:"0 10px",fontSize:10,fontFamily:FONT }}>Edit</button>
-                          <button onClick={e => {
-                            e.stopPropagation();
-                            if (!window.confirm(`Delete "${p.name}"?`)) return;
-                            const u = customPans.filter(x => x.id !== p.id);
-                            setCustomPans(u); savePans(u);
-                            if (selectedCustom === p.id) setSelectedCustom(u[0]?.id || null);
-                          }} style={{ background:"rgba(140,45,45,0.12)",borderLeft:"1px solid rgba(255,255,255,0.07)",border:"none",color:"#a85858",cursor:"pointer",padding:"0 10px",fontSize:12,fontFamily:FONT }}>✕</button>
+              <div className="hp-builder-tab-layout">
+                {/* LEFT: handpan preview */}
+                <div className="hp-builder-tab-left">
+                  {customPans.length === 0 ? (
+                    <div className="hp-builder-tab-empty">No custom pans yet.</div>
+                  ) : selectedCustom ? (() => {
+                    const pan = customPans.find(p => p.id === selectedCustom); if (!pan) return null;
+                    const upper  = pan.notes.filter(n => n.side !== "bottom");
+                    const bottom = pan.notes.filter(n => n.side === "bottom");
+                    const isDouble = pan.sided === "double" && bottom.length > 0;
+                    const panRingsUpper  = pan.rings?.upper  ? pan.rings.upper  : Array.isArray(pan.rings) ? pan.rings : [{count:8,rotation:0}];
+                    const panRingsBottom = pan.rings?.bottom ? pan.rings.bottom : [{count:6,rotation:0}];
+                    return (
+                      <div className="hp-custom-preview-row">
+                        <div className={`hp-custom-preview-col ${isDouble ? "hp-custom-preview-col--double" : "hp-custom-preview-col--single"}`}>
+                          {isDouble && <div className="hp-custom-side-label">Upper</div>}
+                          <PreviewPan notes={upper} positions={pan.positions||{}}
+                            ringsUpper={panRingsUpper} ringsBottom={panRingsBottom}
+                            activeNote={previewNote} onNote={n => previewTap(n, pan.a4||440)} size={260} sid="myU"/>
                         </div>
-                      ))}
-                    </div>
-                    {selectedCustom && (() => {
-                      const pan = customPans.find(p => p.id === selectedCustom); if (!pan) return null;
-                      const upper  = pan.notes.filter(n => n.side !== "bottom");
-                      const bottom = pan.notes.filter(n => n.side === "bottom");
-                      const isDouble = pan.sided === "double" && bottom.length > 0;
-                      const panRingsUpper  = pan.rings?.upper  ? pan.rings.upper  : Array.isArray(pan.rings) ? pan.rings : [{count:8,rotation:0}];
-                      const panRingsBottom = pan.rings?.bottom ? pan.rings.bottom : [{count:6,rotation:0}];
-                      return (
-                        <>
-                          <div style={{ display:"flex",gap:4,justifyContent:"center",marginBottom:12,alignItems:"flex-start",width:"100%",overflow:"hidden" }}>
-                            <div style={{ flex:isDouble?"1 1 0":"0 0 auto",minWidth:0,textAlign:"center",maxWidth:"270px" }}>
-                              {isDouble && <div style={{ fontSize:8,color:"#5a4a28",letterSpacing:2,textTransform:"uppercase",marginBottom:4 }}>Upper</div>}
-                              <PreviewPan notes={upper} positions={pan.positions||{}}
-                                ringsUpper={panRingsUpper} ringsBottom={panRingsBottom}
-                                activeNote={previewNote} onNote={n => previewTap(n, pan.a4||440)} size={260} sid="myU"/>
-                            </div>
-                            {isDouble && (
-                              <div style={{ flex:"1 1 0",minWidth:0,textAlign:"center",maxWidth:"270px"}}>
-                                <div style={{ fontSize:8,color:"#5a4a28",letterSpacing:2,textTransform:"uppercase",marginBottom:4 }}>Bottom</div>
-                                <PreviewPan notes={bottom} positions={pan.positions||{}}
-                                  ringsUpper={panRingsUpper} ringsBottom={panRingsBottom}
-                                  activeNote={previewNote} onNote={n => previewTap(n, pan.a4||440)} size={260} sid="myB"/>
-                              </div>
-                            )}
+                        {isDouble && (
+                          <div className="hp-custom-preview-col hp-custom-preview-col--double">
+                            <div className="hp-custom-side-label">Bottom</div>
+                            <PreviewPan notes={bottom} positions={pan.positions||{}}
+                              ringsUpper={panRingsUpper} ringsBottom={panRingsBottom}
+                              activeNote={previewNote} onNote={n => previewTap(n, pan.a4||440)} size={260} sid="myB"/>
                           </div>
-                          <button onClick={applyCustom} style={{ width:"100%",padding:"11px",background:"rgba(100,200,130,0.18)",border:"1px solid rgba(100,200,130,0.45)",color:"#80d090",borderRadius:9,cursor:"pointer",fontSize:13,fontFamily:FONT,fontWeight:600 }}>Use this handpan →</button>
-                        </>
-                      );
-                    })()}
-                  </>
-                )}
+                        )}
+                      </div>
+                    );
+                  })() : (
+                    <div className="hp-builder-tab-empty">← Select a pan to preview</div>
+                  )}
+                </div>
+                {/* RIGHT: pan list + action */}
+                <div className="hp-builder-tab-right">
+                  {customPans.length === 0 ? (
+                    <div className="hp-custom-empty">No custom pans yet. Use the Build tab to create one.</div>
+                  ) : (
+                    <>
+                      <div className="hp-custom-list">
+                        {customPans.map(p => (
+                          <div key={p.id} onClick={() => setSelectedCustom(p.id)}
+                            className={`hp-custom-item ${selectedCustom===p.id ? "hp-custom-item--selected" : "hp-custom-item--default"}`}>
+                            <div className={`hp-custom-item__label ${selectedCustom===p.id ? "hp-custom-item__label--selected" : "hp-custom-item__label--default"}`}>
+                              <PanIcon size={11}/>
+                              {p.sided === "double" && <PanIcon size={11}/>}
+                              <span>{p.name}</span>
+                            </div>
+                            <button onClick={e => { e.stopPropagation(); editCustom(p); }}
+                              className="hp-custom-item__edit-btn">Edit</button>
+                            <button onClick={e => {
+                              e.stopPropagation();
+                              if (!window.confirm(`Delete "${p.name}"?`)) return;
+                              const u = customPans.filter(x => x.id !== p.id);
+                              setCustomPans(u); savePans(u);
+                              if (selectedCustom === p.id) setSelectedCustom(u[0]?.id || null);
+                            }} className="hp-custom-item__delete-btn">✕</button>
+                          </div>
+                        ))}
+                      </div>
+                      {selectedCustom && (
+                        <button onClick={applyCustom} className="hp-btn-use-custom">Use this handpan →</button>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             )}
 
             {/* ── BUILD ── */}
             {tab === "build" && (
-              <div style={{ display:"flex",flexDirection:"column",gap:14 }}>
+              <div className="hp-build-body hp-builder-tab-layout">
 
-                <div style={{ display:"flex",gap:8,alignItems:"center",flexWrap:"wrap" }}>
-                  <div style={{ fontSize:9,color:"#6a5a30",letterSpacing:2,textTransform:"uppercase" }}>Type</div>
+                {/* LEFT: interactive canvas */}
+                <div className="hp-builder-tab-left">
+
+                {/* Canvas area */}
+                <div className="hp-canvas-area">
+                  <div className={`hp-canvas-row ${isWide ? "hp-canvas-row--wide" : ""}`}>
+                    <div className="hp-canvas-col"
+                      style={{ display: showDouble && !isWide && activeSide === "bottom" ? "none" : "block" }}>
+                      {showDouble && <div className="hp-canvas-side-label">Upper</div>}
+                      <BuilderCanvas notes={upperNotes} rings={rings.upper||[{count:8,rotation:0}]}
+                        onMove={moveNote}
+                        onNoteClick={n => {
+                          previewTap(n);
+                          const letter = n.name.replace(/\d/,"");
+                          const octave = parseInt(n.name.match(/\d/)?.[0]||4);
+                          setBuild(b => ({ ...b, selectedNote:b.selectedNote===n.name?null:n.name, newLetter:letter, newOctave:octave, newNoteSize:n.size||"medium", newNoteRing:Math.max(0,n.ringIdx??0) }));
+                        }}
+                        selectedNote={selectedNote} side="upper"/>
+                    </div>
+                    {showDouble && (
+                      <div className="hp-canvas-col"
+                        style={{ display: !isWide && activeSide === "upper" ? "none" : "block" }}>
+                        <div className="hp-canvas-side-label">Bottom</div>
+                        <BuilderCanvas notes={bottomNotes} rings={rings.bottom||[{count:6,rotation:0}]}
+                          onMove={moveNote}
+                          onNoteClick={n => {
+                            previewTap(n);
+                            const letter = n.name.replace(/\d/,"");
+                            const octave = parseInt(n.name.match(/\d/)?.[0]||4);
+                            setBuild(b => ({ ...b, selectedNote:b.selectedNote===n.name?null:n.name, newLetter:letter, newOctave:octave, newNoteSize:n.size||"medium", newNoteRing:Math.max(0,n.ringIdx??0) }));
+                          }}
+                          selectedNote={selectedNote} side="bottom"/>
+                      </div>
+                    )}
+                  </div>
+                  <div className="hp-canvas-hint">Drag notes to snap · click to select &amp; edit</div>
+                </div>
+
+                </div>{/* end hp-builder-tab-left */}
+
+                {/* RIGHT: all controls */}
+                <div className="hp-builder-tab-right">
+
+                <div className="hp-build-type-row">
+                  <div className="hp-build-type-label">Type</div>
                   <BtnT active={sided==="single"} onClick={() => setB("sided","single")}>○ Single</BtnT>
                   <BtnT active={sided==="double"} onClick={() => setB("sided","double")}>◎ Double</BtnT>
                   {showDouble && <>
-                    <div style={{ width:1,height:18,background:"rgba(255,255,255,0.10)",margin:"0 4px" }}/>
+                    <div className="hp-build-divider"/>
                     <BtnT active={activeSide==="upper"}  onClick={() => setB("activeSide","upper")}>Upper</BtnT>
                     <BtnT active={activeSide==="bottom"} onClick={() => setB("activeSide","bottom")}>Bottom</BtnT>
                   </>}
-                  <div style={{ marginLeft:"auto" }}>
-                    <button onClick={() => { if (window.confirm("Reset the build and start fresh?")) setBuild(EMPTY_BUILD()); }} style={{ background:"rgba(140,45,45,0.12)",border:"1px solid rgba(140,45,45,0.25)",color:"#a85858",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:10,fontFamily:FONT }}>↺ Reset</button>
+                  <div className="hp-build-reset-btn-wrap">
+                    <button onClick={() => { if (window.confirm("Reset the build and start fresh?")) setBuild(EMPTY_BUILD()); }}
+                      className="hp-btn-reset-build">↺ Reset</button>
                   </div>
                 </div>
 
                 {/* Rings editor */}
-                <div style={{ background:"rgba(205,163,83,0.05)",border:"1px solid rgba(205,163,83,0.18)",borderRadius:10,padding:"10px 14px" }}>
-                  <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap" }}>
-                    <div style={{ fontSize:9,color:"#c8a860",letterSpacing:2,textTransform:"uppercase",fontWeight:600 }}>Rings — {activeSide}</div>
+                <div className="hp-rings-editor">
+                  <div className="hp-rings-editor__header">
+                    <div className="hp-rings-editor__title">Rings — {activeSide}</div>
                     <Dropdown value={sideRings.length}
                       onChange={v => {
                         const cur = rings[activeSide] || [{count:8,rotation:0}];
@@ -371,8 +428,8 @@ export default function HandpanBuilder({ open, onClose, onApply }) {
                         setB("rings", { ...rings, [activeSide]:next });
                       }}
                       options={[1,2,3].map(n => ({ value:n, label:`${n} ring${n>1?"s":""}` }))}
-                      style={{ width:100 }}/>
-                    <div style={{ fontSize:9,color:"#5a4a28" }}>Editing ring:</div>
+                      className="hp-dropdown--w100"/>
+                    <div className="hp-rings-editor__sub">Editing ring:</div>
                     {sideRings.map((_,ri) => (
                       <BtnT key={ri} active={build.editRingIdx===ri} onClick={() => setB("editRingIdx",ri)}>Ring {ri+1}</BtnT>
                     ))}
@@ -399,14 +456,14 @@ export default function HandpanBuilder({ open, onClose, onApply }) {
                       setB("rings", { ...rings, [activeSide]:updated });
                     }
                     return (
-                      <div style={{ display:"flex",gap:12,alignItems:"center",flexWrap:"wrap" }}>
-                        <div style={{ display:"flex",gap:6,alignItems:"center" }}>
-                          <span style={{ fontSize:9,color:"#6a5a30" }}>Slots</span>
+                      <div className="hp-rings-editor__slots-row">
+                        <div className="hp-rings-editor__slots-item">
+                          <span className="hp-rings-editor__slots-label">Slots</span>
                           <Dropdown value={ring.count} onChange={v => updateRing("count",v)}
-                            options={[4,5,6,7,8,9,10,11,12].map(n => ({ value:n, label:`${n}` }))} style={{ width:72 }}/>
+                            options={[4,5,6,7,8,9,10,11,12].map(n => ({ value:n, label:`${n}` }))} className="hp-dropdown--w72"/>
                         </div>
-                        <div style={{ display:"flex",gap:6,alignItems:"center",flex:1,minWidth:150 }}>
-                          <span style={{ fontSize:9,color:"#6a5a30",whiteSpace:"nowrap" }}>Rotate</span>
+                        <div className="hp-rings-editor__rotate-item">
+                          <span className="hp-rings-editor__rotate-label">Rotate</span>
                           <Slider min={-maxRot} max={maxRot} value={ring.rotation||0}
                             onChange={v => updateRing("rotation",v)} label={`${ring.rotation||0}°`}/>
                         </div>
@@ -415,59 +472,26 @@ export default function HandpanBuilder({ open, onClose, onApply }) {
                   })()}
                 </div>
 
-                {/* Canvas area */}
-                <div>
-                  <div style={{ display:"flex",gap:12,justifyContent:"center",flexWrap:isWide?"nowrap":"wrap" }}>
-                    <div style={{ flex:"1 1 220px",maxWidth:270,display:showDouble&&!isWide&&activeSide==="bottom"?"none":"block" }}>
-                      {showDouble && <div style={{ fontSize:9,color:"#6a5a30",textAlign:"center",letterSpacing:2,textTransform:"uppercase",marginBottom:4 }}>Upper</div>}
-                      <BuilderCanvas notes={upperNotes} rings={rings.upper||[{count:8,rotation:0}]}
-                        onMove={moveNote}
-                        onNoteClick={n => {
-                          previewTap(n);
-                          const letter = n.name.replace(/\d/,"");
-                          const octave = parseInt(n.name.match(/\d/)?.[0]||4);
-                          setBuild(b => ({ ...b, selectedNote:b.selectedNote===n.name?null:n.name, newLetter:letter, newOctave:octave, newNoteSize:n.size||"medium", newNoteRing:Math.max(0,n.ringIdx??0) }));
-                        }}
-                        selectedNote={selectedNote} side="upper"/>
-                    </div>
-                    {showDouble && (
-                      <div style={{ flex:"1 1 220px",maxWidth:270,display:!isWide&&activeSide==="upper"?"none":"block" }}>
-                        <div style={{ fontSize:9,color:"#6a5a30",textAlign:"center",letterSpacing:2,textTransform:"uppercase",marginBottom:4 }}>Bottom</div>
-                        <BuilderCanvas notes={bottomNotes} rings={rings.bottom||[{count:6,rotation:0}]}
-                          onMove={moveNote}
-                          onNoteClick={n => {
-                            previewTap(n);
-                            const letter = n.name.replace(/\d/,"");
-                            const octave = parseInt(n.name.match(/\d/)?.[0]||4);
-                            setBuild(b => ({ ...b, selectedNote:b.selectedNote===n.name?null:n.name, newLetter:letter, newOctave:octave, newNoteSize:n.size||"medium", newNoteRing:Math.max(0,n.ringIdx??0) }));
-                          }}
-                          selectedNote={selectedNote} side="bottom"/>
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ fontSize:9,color:"#2e2610",textAlign:"center",marginTop:6,fontStyle:"italic" }}>Drag notes to snap · click to select &amp; edit</div>
-                </div>
-
                 {/* Note editor */}
-                <div style={{ background:"rgba(205,163,83,0.06)",border:"1px solid rgba(205,163,83,0.18)",borderRadius:10,padding:"12px 14px" }}>
-                  <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:10 }}>
-                    <div style={{ flex:"1 1 170px" }}>
-                      <div style={{ fontSize:8,color:"#6a5a30",letterSpacing:2,textTransform:"uppercase",marginBottom:4 }}>Pitch</div>
-                      <div style={{ display:"flex",gap:5,alignItems:"center" }}>
-                        <Dropdown value={newLetter} onChange={l => setB("newLetter",l)} options={letterOpts} style={{ flex:1 }}/>
-                        <Dropdown value={newOctave} onChange={o => setB("newOctave",o)} options={octaveOpts} style={{ width:88 }}/>
+                <div className="hp-note-editor">
+                  <div className="hp-note-editor__row">
+                    <div className="hp-note-editor__pitch-col">
+                      <div className="hp-note-editor__sub-label">Pitch</div>
+                      <div className="hp-note-editor__pitch-row">
+                        <Dropdown value={newLetter} onChange={l => setB("newLetter",l)} options={letterOpts} className="hp-dropdown--flex"/>
+                        <Dropdown value={newOctave} onChange={o => setB("newOctave",o)} options={octaveOpts} className="hp-dropdown--w88"/>
                         <button onClick={() => { const midi=12+newOctave*12+SEMITONE_NAMES.indexOf(newLetter); const ctx=getCtx(); synthNote(midiToFreq(midi,a4),ctx.currentTime,ctx,.44); }}
-                          style={{ background:"rgba(205,163,83,0.12)",border:"1px solid rgba(205,163,83,0.30)",color:"#c9a84c",borderRadius:6,padding:"6px 10px",cursor:"pointer",fontSize:12 }}>▶</button>
+                          className="hp-btn-preview-note">▶</button>
                       </div>
                     </div>
-                    <div style={{ flex:"1 1 130px" }}>
-                      <div style={{ fontSize:8,color:"#6a5a30",letterSpacing:2,textTransform:"uppercase",marginBottom:4 }}>Size / Role</div>
+                    <div className="hp-note-editor__size-col">
+                      <div className="hp-note-editor__sub-label">Size / Role</div>
                       <Dropdown value={newNoteSize} onChange={s => setB("newNoteSize",s)} options={sizeOpts}/>
                     </div>
                   </div>
 
-                  <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
-                    <button onClick={addNote} style={{ flex:1,padding:"7px 12px",background:"rgba(100,200,130,0.15)",border:"1px solid rgba(100,200,130,0.40)",color:"#80d090",borderRadius:7,cursor:"pointer",fontSize:11,fontFamily:FONT,fontWeight:600 }}>
+                  <div className="hp-note-editor__btn-row">
+                    <button onClick={addNote} className="hp-btn-add-note">
                       + Add to {sided==="double"?activeSide:"upper"}
                     </button>
 
@@ -500,53 +524,58 @@ export default function HandpanBuilder({ open, onClose, onApply }) {
                             buildNotes:b.buildNotes.map(n => n.name === selectedNote ? { ...n, ...updates } : n),
                             selectedNote:updates.name || selectedNote,
                           }));
-                        }} style={{ flex:1,padding:"7px 12px",background:"rgba(205,163,83,0.15)",border:"1px solid rgba(205,163,83,0.40)",color:"#ddc870",borderRadius:7,cursor:"pointer",fontSize:11,fontFamily:FONT,fontWeight:600 }}>
+                        }} className="hp-btn-update-note">
                           ↻ Update {selNote.name.replace("b","♭")}
                         </button>
-                        <button onClick={() => removeNote(selectedNote)} style={{ padding:"7px 12px",background:"rgba(140,45,45,0.12)",border:"1px solid rgba(140,45,45,0.28)",color:"#a85858",borderRadius:7,cursor:"pointer",fontSize:11,fontFamily:FONT }}>Remove</button>
+                        <button onClick={() => removeNote(selectedNote)} className="hp-btn-remove-note">Remove</button>
                       </>
                     )}
                   </div>
                 </div>
 
                 {/* Note list */}
-                <div>
-                  <div style={{ fontSize:9,color:"#6a5a30",letterSpacing:2,textTransform:"uppercase",marginBottom:6 }}>Notes ({buildNotes.length}) — click to select</div>
-                  <div style={{ display:"flex",gap:4,flexWrap:"wrap" }}>
+                <div className="hp-note-list-section">
+                  <div className="hp-note-list__title">Notes ({buildNotes.length}) — click to select</div>
+                  <div className="hp-note-list__chips">
                     {buildNotes.map(n => (
                       <button key={n.name} onClick={() => {
                         previewTap(n);
                         const letter = n.name.replace(/\d/,"");
                         const octave = parseInt(n.name.match(/\d/)?.[0]||4);
                         setBuild(b => ({ ...b, selectedNote:b.selectedNote===n.name?null:n.name, newLetter:letter, newOctave:octave, newNoteSize:n.size||"medium", newNoteRing:n.ringIdx??0 }));
-                      }} style={{ background:selectedNote===n.name?"rgba(205,163,83,0.20)":"rgba(255,255,255,0.04)",border:`1px solid ${selectedNote===n.name?"rgba(205,163,83,0.55)":"rgba(255,255,255,0.08)"}`,color:selectedNote===n.name?"#ddc870":"#8a7850",borderRadius:6,padding:"3px 9px",cursor:"pointer",fontSize:10,fontFamily:FONT }}>
+                      }} className={`hp-note-list-btn ${selectedNote===n.name ? "hp-note-list-btn--selected" : "hp-note-list-btn--default"}`}>
                         {n.name.replace("b","♭")}
-                        <span style={{ fontSize:8,color:"#5a4a28",marginLeft:3 }}>{NOTE_SIZES[n.size||"medium"]?.label}</span>
-                        {n.side === "bottom" && <span style={{ fontSize:7,color:"#4a5a28",marginLeft:2 }}>(bot)</span>}
+                        <span className="hp-note-list-btn__size">{NOTE_SIZES[n.size||"medium"]?.label}</span>
+                        {n.side === "bottom" && <span className="hp-note-list-btn__side">(bot)</span>}
                       </button>
                     ))}
-                    {buildNotes.length === 0 && <span style={{ fontSize:10,color:"#3a2c10",fontStyle:"italic" }}>No notes yet — use the fields above to add</span>}
+                    {buildNotes.length === 0 && <span className="hp-note-list__empty">No notes yet — use the fields above to add</span>}
                   </div>
                 </div>
 
                 {/* Save */}
-                <div style={{ borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:14 }}>
-                  <div style={{ fontSize:9,color:"#6a5a30",letterSpacing:2,textTransform:"uppercase",marginBottom:8 }}>{editingId ? "Save changes" : "Save & use"}</div>
-                  <div style={{ display:"flex",gap:10,alignItems:"center",marginBottom:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:8,padding:"8px 12px" }}>
-                    <span style={{ fontSize:9,color:"#6a5a30",letterSpacing:1,whiteSpace:"nowrap" }}>A4 tuning</span>
+                <div className="hp-save-section">
+                  <div className="hp-save-section__label">{editingId ? "Save changes" : "Save & use"}</div>
+                  <div className="hp-a4-row">
+                    <span className="hp-a4-row__label">A4 tuning</span>
                     <Slider min={400} max={499} step={1} value={a4} onChange={v => setB("a4",v)} label={`${a4} Hz`}/>
-                    <button onClick={() => setB("a4",440)} style={{ background:"rgba(205,163,83,0.10)",border:"1px solid rgba(205,163,83,0.25)",color:"#c9a84c",borderRadius:5,padding:"2px 8px",cursor:"pointer",fontSize:9,fontFamily:FONT,flexShrink:0 }}>Reset</button>
+                    <button onClick={() => setB("a4",440)} className="hp-btn-reset-a4">Reset</button>
                   </div>
-                  <div style={{ display:"flex",gap:8,alignItems:"center",flexWrap:"wrap" }}>
+                  <div className="hp-save-row">
                     <input value={panName} onChange={e => setB("panName",e.target.value)} placeholder="Name your handpan…"
-                      style={{ flex:1,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:7,padding:"7px 12px",color:"#d4c8a8",fontSize:12,fontFamily:FONT,outline:"none" }}/>
-                    <button onClick={saveAndApply} disabled={!panName.trim()||buildNotes.length<1} style={{ background:panName.trim()?"rgba(100,200,130,0.18)":"rgba(255,255,255,0.03)",border:`1px solid ${panName.trim()?"rgba(100,200,130,0.45)":"rgba(255,255,255,0.07)"}`,color:panName.trim()?"#80d090":"#3a3a30",borderRadius:7,padding:"8px 14px",cursor:panName.trim()?"pointer":"default",fontSize:12,fontFamily:FONT,fontWeight:600,whiteSpace:"nowrap" }}>{editingId ? "Save changes →" : "Save & use →"}</button>
+                      className="hp-pan-name-input"/>
+                    <button onClick={saveAndApply} disabled={!panName.trim()||buildNotes.length<1}
+                      className={`hp-btn-save-apply ${panName.trim() ? "hp-btn-save-apply--enabled" : "hp-btn-save-apply--disabled"}`}>
+                      {editingId ? "Save changes →" : "Save & use →"}
+                    </button>
                     {editingId && (
-                      <button onClick={saveAsNew} disabled={!panName.trim()||buildNotes.length<1} style={{ background:"rgba(160,160,220,0.15)",border:"1px solid rgba(160,160,220,0.40)",color:"#a0b0e0",borderRadius:7,padding:"8px 14px",cursor:"pointer",fontSize:12,fontFamily:FONT,fontWeight:600,whiteSpace:"nowrap" }}>Save as new →</button>
+                      <button onClick={saveAsNew} disabled={!panName.trim()||buildNotes.length<1}
+                        className="hp-btn-save-as-new">Save as new →</button>
                     )}
                   </div>
                 </div>
 
+                </div>
               </div>
             )}
           </div>

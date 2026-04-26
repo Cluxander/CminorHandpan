@@ -1,8 +1,8 @@
-import { FONT } from "../../constants/colors.js";
 import { NOTE_COLOR } from "../../constants/colors.js";
 import { NOTE_SIZES, RING_RADII } from "../../constants/handpan.js";
 import { parsePosV2 } from "../../utils/geometry.js";
 
+const FONT = "var(--font)";
 const CX = 150, CY = 150;
 
 export default function PreviewPan({ notes, positions, ringsUpper, ringsBottom, activeNote, onNote, size = 260, sid = "pp" }) {
@@ -33,7 +33,8 @@ export default function PreviewPan({ notes, positions, ringsUpper, ringsBottom, 
 
   return (
     <svg width="100%" height={typeof size === "number" ? size : undefined} viewBox="0 0 300 300"
-      style={{ display:"block", maxWidth:typeof size === "number" ? size : "100%", touchAction:"none", userSelect:"none", WebkitTapHighlightColor:"transparent" }}>
+      className="hp-preview-pan-svg"
+      style={{ maxWidth: typeof size === "number" ? size : "100%" }}>
       <defs>
         <radialGradient id={`ppBg_${sid}`} cx="50%" cy="50%" r="55%">
           <stop offset="0%"   stopColor="#5c4e28"/>
@@ -64,12 +65,6 @@ export default function PreviewPan({ notes, positions, ringsUpper, ringsBottom, 
           stroke="rgba(140,110,45,0.30)" strokeWidth={1.5}/>
       )}
 
-      {/* {notes.filter(n => !notePos(n).isDing).map(n => {
-        const { x, y } = notePos(n); const lit = activeNote === n.name;
-        return <line key={n.name} x1={CX} y1={CY} x2={x} y2={y}
-          stroke={lit ? colFn(n) + "55" : "rgba(205,163,83,0.05)"} strokeWidth={lit ? 1.5 : .8}/>;
-      })} */}
-
       {[...notes.filter(n => !notePos(n).isDing), ...notes.filter(n => notePos(n).isDing)].map(n => {
         const { x, y, r, isDing, sizeDef } = notePos(n);
         const lbl = n.name.replace("b","♭").replace(/\d/,"");
@@ -77,7 +72,7 @@ export default function PreviewPan({ notes, positions, ringsUpper, ringsBottom, 
         const lit = activeNote === n.name;
         const c = colFn(n);
         return (
-          <g key={n.name} onClick={() => onNote && onNote(n)} style={{ cursor:"pointer" }}>
+          <g key={n.name} onClick={() => onNote && onNote(n)} className="hp-svg-note-group">
             {lit && <circle cx={x} cy={y} r={r+12} fill={c+"18"} filter={`url(#ppGl_${sid})`}/>}
             <circle cx={x} cy={y} r={r+2} fill="none"
               stroke={lit ? c+"55" : "rgba(180,140,55,0.12)"} strokeWidth={lit ? 1.5 : 1}/>
@@ -91,15 +86,15 @@ export default function PreviewPan({ notes, positions, ringsUpper, ringsBottom, 
               textAnchor="middle" dominantBaseline="middle"
               fontSize={sizeDef.fontSize} fontFamily={FONT} fontWeight="600"
               fill={lit ? c : isDing ? "#cda353" : "#9a8a60"}
-              style={{ userSelect:"none", pointerEvents:"none" }}>{lbl}</text>
+              className="hp-svg-text">{lbl}</text>
             {oct && <text x={x+sizeDef.fontSize/2} y={y+sizeDef.fontSize/3}
               textAnchor="middle" fontSize={sizeDef.fontSize} fontFamily={FONT} fontWeight="600"
               fill={lit ? c+(isDing?"cc":"99") : isDing ? "#d7a342" : "#7a6840"}
-              style={{ userSelect:"none", pointerEvents:"none" }}>{oct}</text>}
+              className="hp-svg-text">{oct}</text>}
             {isDing && <text x={x} y={y+(oct?r*0.75:r*0.5)-r/3}
               textAnchor="middle" fontSize={sizeDef.subFontSize-1} fontFamily={FONT} fontWeight="500"
               fill={lit ? c+"cc" : "#d7a342"}
-              style={{ userSelect:"none", pointerEvents:"none" }}>ding</text>}
+              className="hp-svg-text">ding</text>}
           </g>
         );
       })}

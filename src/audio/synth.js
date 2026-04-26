@@ -1,4 +1,4 @@
-import { SAMPLE_DEFS } from "./samples.js";
+import { SAMPLE_DEFS, HP_SLAP } from "./samples.js";
 import { HANDPAN } from "../constants/handpan.js";
 
 export const BPM      = 80;
@@ -133,4 +133,51 @@ export function playChord(notes, strum = true, freqMap) {
     const f = (freqMap || HANDPAN.freq)[n];
     if (f) synthNote(f, now + i * stagger, ctx, noteVol);
   });
+}
+
+import { SAMPLE_DEFS, HP_SLAP } from "./samples.js";
+
+// Helper to ensure the slap is loaded into the _buffers cache
+export async function loadSlapBuffer() {
+  const key = "SLAP_CUSTOM";
+  if (_buffers[key]) return _buffers[key];
+
+  const ctx = getCtx();
+  try {
+    // We reuse your existing b64ToArrayBuffer helper
+    const arrayBuf = b64ToArrayBuffer(HP_SLAP);
+    const audioBuf = await ctx.decodeAudioData(arrayBuf);
+    _buffers[key] = audioBuf;
+    return audioBuf;
+  } catch (err) {
+    console.warn("Failed to load HP_SLAP:", err);
+    return null;
+  }
+}
+
+export async function playSlap(t, ctx, vol = 0.6) {
+  const key = "SLAP_CUSTOM";
+  
+  // Ensure the buffer exists using our new loader
+  const buf = _buffers[key] || await loadSlapBuffer();
+  if (!buf) return;
+
+  const src = ctx.createBufferSource();
+  const env = ctx.createGain();
+
+  src.buffer = buf;
+
+  // The Signal Chain: Source -> Gain (Volume) -> Destination
+  src.connect(env);
+  env.connect(_outGain);
+
+  // Apply Volume
+  env.gain.cancelScheduledValues(t);
+  env.gain.setValueAtTime(vol, t);
+  
+  // Quick fade to prevent clipping/pops
+  env.gain.exponentialRampToValueAtTime(0.001, t + 0.4); 
+
+  src.start(t);
+  src.stop(t + 0.5);
 }

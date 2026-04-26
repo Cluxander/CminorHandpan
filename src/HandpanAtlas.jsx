@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef } from "react";
 import "./styles/handpan.css";
 
-import { FONT, NOTE_COLOR } from "./constants/colors.js";
+import { NOTE_COLOR } from "./constants/colors.js";
 import { CAT_ORDER, CAT_STYLE } from "./constants/chords.js";
 import { STANDARD_PANS } from "./constants/handpan.js";
 
@@ -25,6 +25,8 @@ if (typeof document !== "undefined" && !document.querySelector("#hp-font")) {
   l.href = "https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap";
   document.head.appendChild(l);
 }
+
+let TimeOutChord
 
 export default function HandpanAtlas() {
   const [activeNotes,  setActiveNotes]  = useState([]);
@@ -93,11 +95,12 @@ export default function HandpanAtlas() {
   const [progHighlightNotes, setProgHighlightNotes] = useState([]);
   const progPlayingRef = useRef(false);
 
+
   const handleNoteToggle = useCallback(noteName => {
     const freq = currentPan.freq?.[noteName] ||
       (() => { const n = currentPan.notes?.find(x => x.name === noteName); return n ? midiToFreq(n.midi, currentPan.a4||440) : null; })();
     if (freq) { const ctx = getCtx(); synthNote(freq, ctx.currentTime, ctx, 0.44); }
-
+    
     if (progPlayingRef.current) {
       setProgHighlightNotes([noteName]);
       setTimeout(() => {}, Math.round(BEAT_SEC * 1000));
@@ -119,10 +122,16 @@ export default function HandpanAtlas() {
   const [cardHighlightNotes, setCardHighlightNotes] = useState([]);
 
   const handleChordClick = chord => {
+    setSelectedKey(null);
+    setCardHighlightNotes([]);
     playChord(chord.notes, strum, currentPan.freq);
-    if (selectedKey === chord.key) { setSelectedKey(null); setCardHighlightNotes([]); return; }
     setSelectedKey(chord.key);
     setCardHighlightNotes(chord.notes);
+    clearTimeout(TimeOutChord)
+    TimeOutChord = setTimeout(()=>{
+      setSelectedKey(null);
+      setCardHighlightNotes([]);
+    }, 1000)
   };
 
   const showAll    = () => { setPanFiltering(false); setSelectedKey(null); setCardHighlightNotes([]); };
@@ -158,7 +167,8 @@ export default function HandpanAtlas() {
     if (filters.hideDuplicates) {
       const groups = new Map();
       for (const c of list) {
-        const groupKey = c.root + "|" + c.name;
+        // Include noteCount so "C Minor 3♩" and "C Minor 4♩" are never collapsed
+        const groupKey = c.root + "|" + c.name + "|" + c.noteCount;
         const avgMidi = c.notes.reduce((sum, n) => {
           const note = currentPan.notes.find(x => x.name === n);
           return sum + (note ? note.midi : 0);
@@ -201,20 +211,30 @@ export default function HandpanAtlas() {
   }, [filtered]);
 
   const activeFilterCount = filters.noteCounts.length + filters.cats.length + filters.notes.length + filters.chordNames.length;
+  const hasActiveChord = activeNotes.length > 0 || cardHighlightNotes.length > 0;
 
   return (
-    <div style={{ minHeight:"100vh",background:"#0a0906",color:"#d4c8a8",fontFamily:FONT,WebkitTextSizeAdjust:"100%" }}>
+    <div className="hp-app">
 
-      <StickyHeader onHeight={h => { if (stickyPanRef.current) stickyPanRef.current.style.top = h + "px"; }}/>
+      {/* ── LEFT PANEL (header + handpan) ── */}
+      <div className="hp-left-panel">
+
+      <StickyHeader onHeight={h => {
+        if (stickyPanRef.current) {
+          const isLandscape = window.innerHeight <= 600 && window.innerWidth > window.innerHeight;
+          // In landscape the pan strip lives in a flex column — no top offset needed
+          stickyPanRef.current.style.top = isLandscape ? "" : h + "px";
+        }
+      }}/>
 
       {/* Sticky handpan */}
-      <div ref={stickyPanRef} style={{ position:"sticky",top:0,zIndex:99,background:"rgba(8,7,4,0.97)",borderBottom:"1px solid rgba(205,163,83,0.15)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",padding:"10px 12px 10px",userSelect:"none",WebkitUserSelect:"none" }}>
-        <div style={{ maxWidth:600,margin:"0 auto",display:"flex",flexDirection:"column",alignItems:"center",gap:5 }}>
+      <div ref={stickyPanRef} className="hp-pan-strip">
+        <div className="hp-pan-strip__inner">
           {/* Top row */}
-          <div style={{ width:"100%",display:"flex",alignItems:"stretch",gap:8,height:30 }}>
+          <div className="hp-pan-strip__top-row">
             <button onClick={() => setBuilderOpen(true)} title="Open Handpan Workshop"
-              style={{ background:"rgba(205,163,83,0.10)",border:"1px solid rgba(205,163,83,0.25)",borderRadius:7,padding:"0 10px",cursor:"pointer",flexShrink:0,fontSize:10,color:"#c9a84c",fontFamily:FONT,display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap",overflow:"hidden",maxWidth:"45%" }}>
-              <svg width="12" height="12" viewBox="0 0 14 14" fill="none" style={{ flexShrink:0 }}>
+              className="hp-pan-name-btn">
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none" className="hp-pan-name-btn__svg">
                 <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.2"/>
                 <circle cx="7" cy="7" r="2.5" stroke="currentColor" strokeWidth="1"/>
                 <circle cx="7" cy="2.5" r="1.2" fill="currentColor" opacity=".7"/>
@@ -224,26 +244,26 @@ export default function HandpanAtlas() {
                 <circle cx="3.3" cy="9.2" r="1.2" fill="currentColor" opacity=".7"/>
                 <circle cx="3.3" cy="4.8" r="1.2" fill="currentColor" opacity=".7"/>
               </svg>
-              <span style={{ fontWeight:700,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{currentPan.name || "C Minor"}</span>
+              <span className="hp-pan-name-btn__label">{currentPan.name || "C Minor"}</span>
             </button>
 
-            <div style={{ flex:1,display:"flex",justifyContent:"center",alignItems:"center" }}>
+            <div className="hp-chord-badge-center">
               {activeNotes.length >= 2 && (() => {
                 const best = panChords.find(c => activeNotes.every(n => c.notes.includes(n)) && c.notes.length === activeNotes.length)
                   || panChords.find(c => activeNotes.every(n => c.notes.includes(n)));
                 if (!best) return null;
                 const acc = CAT_STYLE[best.cat]?.accent || "#c9a84c";
                 return (
-                  <div style={{ display:"flex",alignItems:"center",gap:6,height:"100%",background:`${acc}12`,border:`1px solid ${acc}33`,borderRadius:7,padding:"0 12px",fontSize:11,fontFamily:FONT,whiteSpace:"nowrap",overflow:"hidden" }}>
-                    <span style={{ color:acc,fontWeight:700,fontSize:13,flexShrink:0 }}>{best.root.replace("b","♭")}</span>
-                    <span style={{ color:`${acc}cc`,overflow:"hidden",textOverflow:"ellipsis" }}>{best.name}</span>
-                    <span style={{ fontSize:8,color:`${acc}66`,flexShrink:0 }}>{best.noteCount}♩</span>
+                  <div className="hp-chord-badge" style={{ "--accent": acc }}>
+                    <span className="hp-chord-badge__root">{best.root.replace("b","♭")}</span>
+                    <span className="hp-chord-badge__name">{best.name}</span>
+                    <span className="hp-chord-badge__count">{best.noteCount}♩</span>
                   </div>
                 );
               })()}
             </div>
 
-            <div style={{ visibility:"hidden",padding:"0 10px",fontSize:13,fontWeight:700,maxWidth:"45%",flexShrink:0,whiteSpace:"nowrap",display:"flex",alignItems:"center" }}>
+            <div className="hp-pan-name-spacer">
               <span>{currentPan.name || "C Minor"}</span>
             </div>
           </div>
@@ -254,17 +274,17 @@ export default function HandpanAtlas() {
               ? progHighlightNotes
               : cardHighlightNotes.length > 0 ? cardHighlightNotes : activeNotes;
             return (
-              <div style={{ display:"flex",gap:4,justifyContent:"center",alignItems:"flex-start",width:"100%",maxWidth:"100%",overflow:"hidden" }}>
-                <div style={{ flex:"1 1 0",minWidth:0,maxWidth:260 }}>
-                  {currentPan.sided === "double" && <div style={{ fontSize:7,color:"#5a4a28",textAlign:"center",letterSpacing:2,textTransform:"uppercase",marginBottom:2 }}>Upper</div>}
+              <div className="hp-diagrams-row">
+                <div className="hp-diagram-col">
+                  {currentPan.sided === "double" && <div className="hp-diagram-side-label">Upper</div>}
                   <HandpanDiagram uniqueId="upper"
                     activeNotes={diagramActiveNotes} onNoteToggle={handleNoteToggle}
                     notePositions={currentPan.positions}
                     panNotes={(currentPan.notes||[]).filter(n => n.side !== "bottom")}/>
                 </div>
                 {currentPan.sided === "double" && (
-                  <div style={{ flex:"1 1 0",minWidth:0,maxWidth:260 }}>
-                    <div style={{ fontSize:7,color:"#5a4a28",textAlign:"center",letterSpacing:2,textTransform:"uppercase",marginBottom:2 }}>Bottom</div>
+                  <div className="hp-diagram-col">
+                    <div className="hp-diagram-side-label">Bottom</div>
                     <HandpanDiagram uniqueId="bottom"
                       activeNotes={diagramActiveNotes} onNoteToggle={handleNoteToggle}
                       notePositions={currentPan.positions}
@@ -276,31 +296,46 @@ export default function HandpanAtlas() {
           })()}
 
           {/* Info row */}
-          <div style={{ width:"100%",maxWidth:440,textAlign:"center",height:38,display:"flex",flexDirection:"column",justifyContent:"center" }}>
+          <div className="hp-info-row">
             {activeNotes.length > 0 ? (
               <>
-                <div style={{ display:"flex",gap:4,flexWrap:"wrap",justifyContent:"center",alignItems:"center",marginBottom:3 }}>
-                  <span style={{ fontSize:8,color:"#5a4a28",letterSpacing:3,textTransform:"uppercase",fontFamily:FONT }}>{panMode ? "Playing" : "Chord"}</span>
+                <div className="hp-active-notes-row">
+                  <span className="hp-active-notes-label">{panMode ? "Playing" : "Chord"}</span>
                   {activeNotes.map(n => (
-                    <span key={n} onClick={() => { if (panMode) handleNoteToggle(n); else setActiveNotes(prev => prev.filter(x => x !== n)); }} style={{ background:NOTE_COLOR(n)+"20",border:`1px solid ${NOTE_COLOR(n)}66`,color:NOTE_COLOR(n),borderRadius:4,padding:"1px 7px",fontSize:10,fontFamily:"monospace",cursor:"pointer" }}>{n.replace("b","♭")}{panMode?" ✕":""}</span>
+                    <span key={n} onClick={() => { if (panMode) handleNoteToggle(n); else setActiveNotes(prev => prev.filter(x => x !== n)); }}
+                      className="hp-note-chip" style={{ "--note-color": NOTE_COLOR(n) }}>
+                      {n.replace("b","♭")}{panMode?" ✕":""}
+                    </span>
                   ))}
-                  <button onClick={clearAll} style={{ background:"rgba(140,45,45,0.15)",border:"1px solid rgba(140,45,45,0.30)",color:"#a85858",borderRadius:5,padding:"2px 8px",cursor:"pointer",fontSize:9,fontFamily:FONT }}>Clear</button>
+                  <button onClick={clearAll} className="hp-btn-clear-sm">Clear</button>
                 </div>
-                <div style={{ fontSize:9.5,color:"#5a4a28",fontStyle:"italic",fontFamily:FONT }}>
+                <div className="hp-info-status">
                   {panMode
                     ? (filtered.length > 0 ? `${filtered.length} chord${filtered.length!==1?"s":""} found` : "No matching chords")
                     : `${relatedKeys.size} chord${relatedKeys.size!==1?"s":""} contain these notes`}
                 </div>
               </>
             ) : (
-              <div style={{ fontSize:9.5,color:"rgb(85, 79, 60)",letterSpacing:.5,fontFamily:FONT }}>Tap notes to build a chord · or browse below</div>
+              <div className="hp-info-hint">Tap notes to build a chord · or browse below</div>
             )}
           </div>
         </div>
+
+        {/* Support link — bottom-right corner */}
+        <a href="#" className="hp-support-link">
+          {/* <svg width="25" height="25" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+          </svg> */}
+          <span>Support me ❤️</span>
+        </a>
       </div>
+      </div>{/* end hp-left-panel */}
+
+      {/* ── RIGHT PANEL (content + footer) ── */}
+      <div className="hp-right-panel">
 
       {/* Content wrapper */}
-      <div style={{ maxWidth:880,margin:"0 auto",padding:"0 12px" }}>
+      <div className="hp-content">
 
         {savedChords.length > 0 && (
           <SavedChordsStrip
@@ -320,46 +355,51 @@ export default function HandpanAtlas() {
         )}
 
         {/* Filter bar */}
-        <div style={{ padding:"10px 0 0",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap" }}>
-          <button onClick={() => setFilterOpen(true)} style={{ display:"flex",alignItems:"center",gap:6,background:activeFilterCount>0?"rgba(205,163,83,0.16)":"rgba(255,255,255,0.05)",border:`1px solid ${activeFilterCount>0?"rgba(205,163,83,0.50)":"rgba(255,255,255,0.09)"}`,color:activeFilterCount>0?"#ddc870":"#7a6a50",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontSize:12,fontFamily:FONT,transition:"all .15s" }}>
+        <div className="hp-filter-bar">
+          <button onClick={() => setFilterOpen(true)}
+            className={`hp-btn-filter ${activeFilterCount > 0 ? "hp-btn-filter--active" : "hp-btn-filter--inactive"}`}>
             <span>⚙ Filters</span>
-            {activeFilterCount > 0 && <span style={{ background:"rgba(205,163,83,0.32)",borderRadius:10,padding:"0 6px",fontSize:10,color:"#ddc870" }}>{activeFilterCount}</span>}
+            {activeFilterCount > 0 && <span className="hp-filter-badge">{activeFilterCount}</span>}
           </button>
 
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search chords…" style={{ flex:1,minWidth:110,maxWidth:210,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)",borderRadius:8,padding:"7px 12px",color:"#d4c8a8",fontSize:12,fontFamily:FONT,outline:"none" }}/>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search chords…"
+            className="hp-search-input"/>
 
-          {panMode && <button onClick={showAll} style={{ background:"rgba(205,163,83,0.12)",border:"1px solid rgba(205,163,83,0.35)",color:"#c9a84c",borderRadius:8,padding:"7px 13px",cursor:"pointer",fontSize:11,fontFamily:FONT }}>Show all</button>}
-          {(activeFilterCount > 0 || search) && !panMode && <button onClick={() => { clearFilters(); setSearch(""); }} style={{ background:"rgba(140,45,45,0.14)",border:"1px solid rgba(140,45,45,0.28)",color:"#a85858",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:11,fontFamily:FONT }}>✕ Clear</button>}
+          {panMode && <button onClick={showAll} className="hp-btn-show-all">Show all</button>}
+          {(activeFilterCount > 0 || search) && !panMode && (
+            <button onClick={() => { clearFilters(); setSearch(""); }} className="hp-btn-clear-filters">✕ Clear</button>
+          )}
 
-          <span style={{ flex:1 }}/>
+          <span className="hp-filter-spacer"/>
 
-          <div style={{ display:"flex",gap:6,alignItems:"center",flexShrink:0 }}>
-            <button onClick={() => setStrum(s => !s)} style={{ display:"flex",alignItems:"center",gap:5,background:strum?"rgba(205,163,83,0.14)":"rgba(255,255,255,0.04)",border:`1px solid ${strum?"rgba(205,163,83,0.40)":"rgba(255,255,255,0.09)"}`,color:strum?"#ddc870":"#7a6a50",borderRadius:8,padding:"6px 11px",cursor:"pointer",fontSize:11,fontFamily:FONT,transition:"all .15s",whiteSpace:"nowrap" }}>
-              <span style={{ fontSize:12,lineHeight:1 }}>{strum?"〜":"‖"}</span>
+          <div className="hp-filter-actions">
+            <button onClick={() => setStrum(s => !s)}
+              className={`hp-btn-strum ${strum ? "hp-btn-strum--on" : "hp-btn-strum--off"}`}>
+              <span className="hp-btn-strum__icon">{strum?"〜":"‖"}</span>
               <span>{strum?"Strum":"Together"}</span>
             </button>
 
             <button
               onClick={() => { const n = activeNotes.length>0?activeNotes:cardHighlightNotes; if (n.length>0) playChord(n,strum,currentPan.freq); }}
-              disabled={activeNotes.length===0 && cardHighlightNotes.length===0}
-              style={{ display:"flex",alignItems:"center",gap:5,background:(activeNotes.length>0||cardHighlightNotes.length>0)?"rgba(100,180,120,0.18)":"rgba(255,255,255,0.03)",border:`1px solid ${(activeNotes.length>0||cardHighlightNotes.length>0)?"rgba(100,200,130,0.40)":"rgba(255,255,255,0.07)"}`,color:(activeNotes.length>0||cardHighlightNotes.length>0)?"#80d090":"#3a3a30",borderRadius:8,padding:"6px 13px",cursor:(activeNotes.length>0||cardHighlightNotes.length>0)?"pointer":"default",fontSize:12,fontFamily:FONT,transition:"all .15s",whiteSpace:"nowrap" }}>
-              <span style={{ fontSize:14,lineHeight:1 }}>▶</span>
-              <span style={{ fontSize:11 }}>Play</span>
+              disabled={!hasActiveChord}
+              className={`hp-btn-play ${hasActiveChord ? "hp-btn-play--enabled" : "hp-btn-play--disabled"}`}>
+              <span className="hp-btn-play__icon">▶</span>
+              <span className="hp-btn-play__label">Play</span>
             </button>
 
             <button
               onClick={saveChord}
-              disabled={activeNotes.length===0 && cardHighlightNotes.length===0}
-              style={{ display:"flex",alignItems:"center",gap:5,background:(activeNotes.length>0||cardHighlightNotes.length>0)?"rgba(160,120,200,0.18)":"rgba(255,255,255,0.03)",border:`1px solid ${(activeNotes.length>0||cardHighlightNotes.length>0)?"rgba(160,120,200,0.40)":"rgba(255,255,255,0.07)"}`,color:(activeNotes.length>0||cardHighlightNotes.length>0)?"#c0a0e0":"#3a3a30",borderRadius:8,padding:"6px 11px",cursor:activeNotes.length>0?"pointer":"default",fontSize:11,fontFamily:FONT,whiteSpace:"nowrap" }}>
+              disabled={!hasActiveChord}
+              className={`hp-btn-save ${hasActiveChord ? "hp-btn-save--enabled" : "hp-btn-save--disabled"}`}>
               <span>♡ Save</span>
             </button>
           </div>
         </div>
 
         {/* Chord list */}
-        <div style={{ padding:"10px 0 72px" }}>
+        <div className="hp-chord-list">
           {activeNotes.length > 0 ? (
-            <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(175px,100%),1fr))",gap:5 }}>
+            <div className="hp-chord-grid">
               {filtered.map(chord => {
                 const isSel = selectedKey === chord.key;
                 const isRel = !isSel && relatedKeys.has(chord.key);
@@ -367,7 +407,7 @@ export default function HandpanAtlas() {
                 return <ChordCard key={chord.key} chord={chord} isSelected={isSel} isRelated={isRel} dimmed={isDimmed} onClick={() => handleChordClick(chord)}/>;
               })}
               {filtered.length === 0 && (
-                <div style={{ gridColumn:"1/-1",textAlign:"center",padding:"48px 20px",color:"#3a2c0e",fontSize:13,fontStyle:"italic",fontFamily:FONT }}>
+                <div className="hp-chord-empty">
                   No chord found for this combination. Try removing a note.
                 </div>
               )}
@@ -380,18 +420,18 @@ export default function HandpanAtlas() {
                 const s = CAT_STYLE[cat];
                 const sortedNames = Object.keys(nameMap).sort();
                 return (
-                  <div key={cat} style={{ marginBottom:28 }}>
-                    <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:12,paddingBottom:7,borderBottom:`1px solid ${s.accent}22` }}>
-                      <div style={{ width:8,height:8,borderRadius:"50%",background:s.accent,flexShrink:0 }}/>
-                      <span style={{ fontSize:11,color:s.accent,letterSpacing:3,textTransform:"uppercase",fontFamily:FONT,fontWeight:"600" }}>{s.label}</span>
-                      <span style={{ fontSize:10,color:s.accent+"55",fontFamily:FONT }}>({filtered.filter(c => c.cat===cat).length})</span>
+                  <div key={cat} className="hp-cat-section">
+                    <div className="hp-cat-header" style={{ "--accent": s.accent }}>
+                      <div className="hp-cat-dot"/>
+                      <span className="hp-cat-label">{s.label}</span>
+                      <span className="hp-cat-count">({filtered.filter(c => c.cat===cat).length})</span>
                     </div>
                     {sortedNames.map(chordName => {
                       const cards = nameMap[chordName];
                       return (
-                        <div key={chordName} style={{ marginBottom:12 }}>
-                          <div style={{ fontSize:9.5,color:s.accent+"88",letterSpacing:2,textTransform:"uppercase",fontFamily:FONT,fontWeight:"600",marginBottom:5,paddingLeft:2 }}>{chordName}</div>
-                          <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(175px,100%),1fr))",gap:5 }}>
+                        <div key={chordName} className="hp-chord-type-section">
+                          <div className="hp-chord-type-name" style={{ "--accent": s.accent }}>{chordName}</div>
+                          <div className="hp-chord-grid">
                             {cards.map(chord => {
                               const isSel = selectedKey === chord.key;
                               const isRel = !isSel && relatedKeys.has(chord.key) && activeNotes.length > 0;
@@ -406,7 +446,7 @@ export default function HandpanAtlas() {
                 );
               })}
               {filtered.length === 0 && (
-                <div style={{ textAlign:"center",padding:"48px 20px",color:"#3a2c0e",fontSize:13,fontStyle:"italic",fontFamily:FONT }}>No chords match these filters.</div>
+                <div className="hp-chord-empty--full">No chords match these filters.</div>
               )}
             </>
           )}
@@ -415,6 +455,7 @@ export default function HandpanAtlas() {
       </div>
 
       <AppFooter/>
+      </div>{/* end hp-right-panel */}
 
       <FilterModal open={filterOpen} onClose={() => setFilterOpen(false)} filters={filters} onChange={setFilters}
         availableCats={panAvailableCats} availableChordNames={panChordNames} noteList={currentPan.notes.map(n => n.name)}/>

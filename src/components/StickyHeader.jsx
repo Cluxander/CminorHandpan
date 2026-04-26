@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { FONT } from "../constants/colors.js";
 
 export default function StickyHeader({ onHeight }) {
   const ref    = useRef(null);
@@ -17,7 +16,9 @@ export default function StickyHeader({ onHeight }) {
     const tag   = el.querySelector(".hp-tagline");
 
     function update() {
-      const t = Math.min(window.scrollY / SCROLL_RANGE, 1); // 0→1, 1:1 with scroll
+      // In landscape (short viewport) force fully-collapsed state — no scroll happens there
+      const isLandscape = window.innerHeight <= 600 && window.innerWidth > window.innerHeight;
+      const t = isLandscape ? 1 : Math.min(window.scrollY / SCROLL_RANGE, 1);
 
       // Padding: top 24→6, bottom 18→6
       el.style.paddingTop    = `${12 - 18 * t}px`;
@@ -47,8 +48,13 @@ export default function StickyHeader({ onHeight }) {
       rafRef.current = requestAnimationFrame(update);
     };
     window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", update);
     update();
-    return () => { window.removeEventListener("scroll", onScroll); cancelAnimationFrame(rafRef.current); };
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", update);
+      cancelAnimationFrame(rafRef.current);
+    };
   }, []);
 
   // Also report on resize (font scaling etc.) via ResizeObserver
@@ -60,16 +66,9 @@ export default function StickyHeader({ onHeight }) {
   }, []);
 
   return (
-    <div ref={ref} style={{
-      position:"sticky", top:0, zIndex:100,
-      background:"linear-gradient(180deg,#1a1508 0%,#0e0c07 100%)",
-      borderBottom:"1px solid rgba(205,163,83,0.13)",
-      backdropFilter:"blur(10px)", WebkitBackdropFilter:"blur(10px)",
-      textAlign:"center", padding:"12px 16px 18px", overflow:"hidden",
-    }}>
-      <div style={{ display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginBottom:0 }}>
-        <svg className="hp-logo" width="38" height="38" viewBox="0 0 38 38" fill="none"
-          style={{ flexShrink:0, transformOrigin:"center", willChange:"transform" }}>
+    <div ref={ref} className="hp-sticky-header">
+      <div className="hp-sticky-header__inner">
+        <svg className="hp-logo" width="38" height="38" viewBox="0 0 38 38" fill="none">
           <circle cx="19" cy="19" r="17.5" stroke="#c9a84c" strokeWidth="1.5" strokeOpacity=".7"/>
           <circle cx="19" cy="19" r="12"   stroke="#c9a84c" strokeWidth="1"   strokeOpacity=".3"/>
           <circle cx="19" cy="19" r="5"    stroke="#c9a84c" strokeWidth="1.2" strokeOpacity=".6"/>
@@ -80,16 +79,9 @@ export default function StickyHeader({ onHeight }) {
           <circle cx="10.1" cy="25.5" r="2.5" fill="#c9a84c" opacity=".8"/>
           <circle cx="10.1" cy="12.5" r="2.5" fill="#c9a84c" opacity=".8"/>
         </svg>
-        <h1 className="hp-title" style={{
-          fontSize:"44px", fontWeight:700, color:"#e8d4a0", margin:0, letterSpacing:-1,
-          fontFamily:FONT, lineHeight:1.0,
-          textShadow:"0 0 30px rgba(205,163,83,0.25)",
-        }}>Handpanist</h1>
+        <h1 className="hp-title">Handpanist</h1>
       </div>
-      <div className="hp-tagline" style={{
-        fontSize:12, color:"#6a5a30", fontFamily:FONT, letterSpacing:.5,
-        position:"relative", marginTop:6, willChange:"margin-top, padding-bottom, opacity", height:0, paddingBottom:"10px",
-      }}>
+      <div className="hp-tagline">
         know your handpan
       </div>
     </div>

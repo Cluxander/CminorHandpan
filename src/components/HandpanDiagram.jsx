@@ -1,7 +1,8 @@
-import { FONT, NOTE_COLOR, NOTE_POS } from "../constants/colors.js";
+import { NOTE_COLOR, NOTE_POS } from "../constants/colors.js";
 import { NOTE_SIZES } from "../constants/handpan.js";
 import { HANDPAN } from "../constants/handpan.js";
 
+const FONT = "var(--font)";
 const CX = 150, CY = 150, RING_R = 90;
 
 export default function HandpanDiagram({ activeNotes, onNoteToggle, notePositions, panNotes, uniqueId = "hp" }) {
@@ -29,7 +30,7 @@ export default function HandpanDiagram({ activeNotes, onNoteToggle, notePosition
   ];
 
   return (
-    <svg width="100%" viewBox="0 0 300 300" style={{ display:"block",maxWidth:260,margin:"0 auto",touchAction:"none",userSelect:"none",WebkitUserSelect:"none",WebkitTapHighlightColor:"transparent" }}>
+    <svg width="100%" viewBox="0 0 300 300" className="hp-diagram-svg">
       <defs>
         <radialGradient id={`hpBody_${uniqueId}`} cx="50%" cy="50%" r="55%" gradientUnits="objectBoundingBox">
           <stop offset="0%"   stopColor="#5c4e28"/>
@@ -60,14 +61,6 @@ export default function HandpanDiagram({ activeNotes, onNoteToggle, notePosition
         <circle cx={CX} cy={CY} r={36} fill="rgba(0,0,0,0.75)" stroke="rgba(140,110,45,0.30)" strokeWidth={1.5}/>
       )}
 
-      {/* {renderList.filter(n => !getNotePos(n.name)?.isDing).map(n => {
-        const p = getNotePos(n.name); if (!p) return null;
-        const lit = activeNotes.includes(n.name);
-        return <line key={n.name} x1={CX} y1={CY} x2={p.x} y2={p.y}
-          stroke={lit ? NOTE_COLOR(n.name)+"66" : "rgba(205,163,83,0.06)"}
-          strokeWidth={lit ? 1.5 : .8} style={{ transition:"stroke .25s" }}/>;
-      })} */}
-
       {renderList.map(n => {
         const pos = getNotePos(n.name); if (!pos) return null;
         const { x, y, isDing } = pos;
@@ -77,31 +70,31 @@ export default function HandpanDiagram({ activeNotes, onNoteToggle, notePosition
         const lbl = n.name.replace("b","♭").replace(/\d/,"");
         const oct = n.name.match(/\d/)?.[0] || "";
         return (
-          <g key={n.name} onClick={() => onNoteToggle(n.name)} style={{ cursor:"pointer" }}>
+          <g key={n.name} onClick={() => onNoteToggle(n.name)} className="hp-svg-note-group">
             {lit && <circle cx={x} cy={y} r={r+13} fill={col+"18"} filter={`url(#hpGlow_${uniqueId})`}/>}
             <circle cx={x} cy={y} r={r+2} fill="none"
               stroke={lit ? col+"55" : "rgba(180,140,55,0.15)"}
-              strokeWidth={lit?1.5:1} style={{ transition:"stroke .2s" }}/>
+              strokeWidth={lit?1.5:1} className="hp-svg-circle--stroke-anim"/>
             <circle cx={x} cy={y} r={r}
               fill={lit ? col+"38" : "rgba(20, 17, 8, 0.75)"}
               stroke={lit ? col : isDing ? "rgba(205,163,83,0.60)" : "rgba(140, 110, 45, 0.4)"}
-              strokeWidth={lit?2.5:1.5} style={{ transition:"all .2s" }}/>
+              strokeWidth={lit?2.5:1.5} className="hp-svg-circle--all-anim"/>
             <circle cx={x} cy={y} r={r-r/3} fill="none"
               stroke={lit ? col+"44" : "rgba(205, 162, 83, 0.22)"}
-              strokeWidth={lit ? 1.5 : .8} style={{ transition:"stroke .2s" }}/>
+              strokeWidth={lit ? 1.5 : .8} className="hp-svg-circle--stroke-anim"/>
             <text x={x-sizeDef.fontSize/3} y={y+sizeDef.fontSize/10}
               textAnchor="middle" dominantBaseline="middle"
               fontSize={sizeDef.fontSize} fontFamily={FONT} fontWeight="600"
               fill={lit ? col : isDing ? "#d4a830" : "#9a8a60"}
-              style={{ userSelect:"none", pointerEvents:"none", transition:"fill .2s" }}>{lbl}</text>
+              className="hp-svg-text--fill-anim">{lbl}</text>
             {oct && <text x={x+sizeDef.fontSize/2} y={y+sizeDef.fontSize/3}
               textAnchor="middle" fontSize={sizeDef.fontSize} fontFamily={FONT} fontWeight="600"
               fill={lit ? col+(isDing?"cc":"99") : isDing ? "#d7a342" : "#7a6840"}
-              style={{ userSelect:"none", pointerEvents:"none" }}>{oct}</text>}
+              className="hp-svg-text">{oct}</text>}
             {isDing && <text x={x} y={y+(oct?r*0.75:r*0.5)-r/3}
               textAnchor="middle" fontSize={sizeDef.subFontSize-1} fontFamily={FONT} fontWeight="500"
               fill={lit ? col+"ee" : "#d7a342"}
-              style={{ userSelect:"none", pointerEvents:"none" }}>ding</text>}
+              className="hp-svg-text">ding</text>}
           </g>
         );
       })}

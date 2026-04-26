@@ -1,17 +1,13 @@
-import { FONT } from "../constants/colors.js";
-
 export default function AppFooter() {
   const ic = (path, label) => (
-    <a href="#" title={label} style={{ color:"rgba(205,163,83,0.50)",display:"flex",alignItems:"center",transition:"color .2s" }}
-      onMouseEnter={e => e.currentTarget.style.color="rgba(205,163,83,0.90)"}
-      onMouseLeave={e => e.currentTarget.style.color="rgba(205,163,83,0.50)"}>
+    <a href="#" title={label} className="hp-footer__icon-link">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d={path}/></svg>
     </a>
   );
   return (
-    <footer style={{ background:"#0a0906",borderTop:"1px solid rgba(205,163,83,0.10)",padding:"28px 16px",textAlign:"center",fontFamily:FONT }}>
-      <div style={{ maxWidth:880,margin:"0 auto" }}>
-        <div style={{ display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginBottom:10 }}>
+    <footer className="hp-footer">
+      <div className="hp-footer__inner">
+        <div className="hp-footer__brand">
           <svg width="24" height="24" viewBox="0 0 38 38" fill="none">
             <circle cx="19" cy="19" r="17.5" stroke="#c9a84c" strokeWidth="1.5" strokeOpacity=".6"/>
             <circle cx="19" cy="19" r="5" stroke="#c9a84c" strokeWidth="1.2" strokeOpacity=".5"/>
@@ -22,10 +18,10 @@ export default function AppFooter() {
             <circle cx="10.1" cy="25.5" r="2.2" fill="#c9a84c" opacity=".7"/>
             <circle cx="10.1" cy="12.5" r="2.2" fill="#c9a84c" opacity=".7"/>
           </svg>
-          <span style={{ fontSize:14,color:"rgba(205,163,83,0.70)",fontWeight:600,letterSpacing:.5 }}>Handpanist</span>
+          <span className="hp-footer__brand-name">Handpanist</span>
         </div>
 
-        <div style={{ display:"flex",gap:18,justifyContent:"center",marginBottom:14 }}>
+        <div className="hp-footer__icons">
           {ic("M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z","Facebook")}
           {ic("M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6zM2 9h4v12H2z M4 6a2 2 0 100-4 2 2 0 000 4z","Instagram placeholder")}
           {ic("M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.73a8.14 8.14 0 004.77 1.53V6.79a4.85 4.85 0 01-1-.1z","TikTok")}
@@ -33,7 +29,7 @@ export default function AppFooter() {
           {ic("M18 8h1a4 4 0 010 8h-1M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8zM6 1v3M10 1v3M14 1v3","Buy me a coffee")}
         </div>
 
-        <div style={{ fontSize:10,color:"rgba(205,163,83,0.25)",letterSpacing:.5 }}>
+        <div className="hp-footer__copy">
           © {new Date().getFullYear()} · Made with ♥ in Bucharest
         </div>
       </div>

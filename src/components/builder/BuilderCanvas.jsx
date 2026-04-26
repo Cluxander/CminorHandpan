@@ -1,8 +1,8 @@
 import { useState, useRef } from "react";
-import { FONT, NOTE_COLOR } from "../../constants/colors.js";
 import { NOTE_SIZES, RING_RADII } from "../../constants/handpan.js";
 import { getSnapAngles, snapToSlot } from "../../utils/geometry.js";
 
+const FONT = "var(--font)";
 const CX = 150, CY = 150;
 
 export default function BuilderCanvas({ notes, rings, onMove, onNoteClick, selectedNote, side = "upper" }) {
@@ -95,7 +95,7 @@ export default function BuilderCanvas({ notes, rings, onMove, onNoteClick, selec
 
   return (
     <svg ref={svgRef} width="100%" viewBox="0 0 300 300"
-      style={{ display:"block", maxWidth:260, margin:"0 auto", touchAction:"none", userSelect:"none", WebkitUserSelect:"none", WebkitTapHighlightColor:"transparent" }}
+      className="hp-builder-canvas-svg"
       onPointerMove={onPM} onPointerUp={onPU}>
       <defs>
         <radialGradient id={`${gid}Bg`} cx="50%" cy="50%" r="55%">
@@ -161,7 +161,7 @@ export default function BuilderCanvas({ notes, rings, onMove, onNoteClick, selec
             onPointerDown={e => onPD(e, n.name)}
             onMouseEnter={() => setHover(n.name)}
             onMouseLeave={() => setHover(null)}
-            style={{ cursor: drag ? "grabbing" : "grab" }}>
+            className={drag ? "hp-svg-builder-note--dragging" : "hp-svg-builder-note"}>
             {(sel || drag) && <circle cx={x} cy={y} r={r+9} fill={sel ? "rgba(205,163,83,0.10)" : "none"}
               filter={`url(#${gid}Gl)`}/>}
             <circle cx={x} cy={y} r={r+2} fill="none"
@@ -177,15 +177,15 @@ export default function BuilderCanvas({ notes, rings, onMove, onNoteClick, selec
               textAnchor="middle" dominantBaseline="middle"
               fontSize={sizeDef.fontSize} fontFamily={FONT} fontWeight="600"
               fill={sel ? "#e8c97a" : isDing ? "#cda353" : "#9a8a60"}
-              style={{ userSelect:"none", pointerEvents:"none" }}>{lbl}</text>
+              className="hp-svg-text">{lbl}</text>
             {oct && <text x={x+sizeDef.fontSize/2} y={y+sizeDef.fontSize/3}
               textAnchor="middle" fontSize={sizeDef.fontSize} fontFamily={FONT} fontWeight="600"
               fill={sel ? "#c8a050" : isDing ? "#7a6030" : "#6a5838"}
-              style={{ userSelect:"none", pointerEvents:"none" }}>{oct}</text>}
+              className="hp-svg-text">{oct}</text>}
             {isDing && <text x={x} y={y+(oct?r*0.75:r*0.5)-r/3}
               textAnchor="middle" fontSize={sizeDef.subFontSize-1} fontFamily={FONT} fontWeight="500"
               fill={sel ? "#b09040" : "#6a5838"}
-              style={{ userSelect:"none", pointerEvents:"none" }}>ding</text>}
+              className="hp-svg-text">ding</text>}
           </g>
         );
       })}
