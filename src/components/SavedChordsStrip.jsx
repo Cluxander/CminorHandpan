@@ -16,33 +16,32 @@ export default function SavedChordsStrip({ chords, onChords, strum, freqMap, onP
   const beatsPerBar = TIME_SIGS[timeSigIdx];
 
   const [BMP, setBMP] = useState(60);
-  // Inside your playProgression component
   const [metronomeActive, setMetronomeActive] = useState(false);
   const metronomeRef = useRef(false);
 
-// Keep ref in sync
-useEffect(() => { metronomeRef.current = metronomeActive; }, [metronomeActive]);
-  
+  useEffect(() => { metronomeRef.current = metronomeActive; }, [metronomeActive]);
+
+  const BPM_PRESETS = [45, 60, 75, 90, 100, 111, 120, 135];
+
   const handleBpmChange = (e) => {
-      // 1. Get the value from the input
-      let value = parseInt(e.target.value);
-  
-      // 2. Handle empty input (if user deletes everything to type a new number)
-      if (isNaN(value)) {
-          setBMP(""); // Allow the input to be empty while typing
-          return;
-      }
-  
-      if (value > 180) value = 180;
-      if (value < 40) value = 40;
-  
-      setBMP(value);
+    const raw = e.target.value;
+    if (raw === "") { setBMP(""); return; }
+    const value = parseInt(raw);
+    if (!isNaN(value)) setBMP(value);
   };
-  
+
   const handleBlur = () => {
-      if (BMP < 40 || BMP === "") {
-          setBMP(40);
-      }
+    const clamped = Math.max(40, Math.min(180, parseInt(BMP) || 60));
+    setBMP(clamped);
+  };
+
+  const handleBpmClick = () => {
+    const current = parseInt(BMP) || 60;
+    const idx = BPM_PRESETS.indexOf(current);
+    const next = idx >= 0
+      ? BPM_PRESETS[(idx + 1) % BPM_PRESETS.length]
+      : BPM_PRESETS.find(p => p > current) ?? BPM_PRESETS[0];
+    setBMP(next);
   };
 
   function cycleTimeSig() { setTimeSigIdx(i => (i + 1) % TIME_SIGS.length); }
@@ -79,7 +78,7 @@ function playProgression() {
     if (loopIdRef.current !== myId) return;
   
     const c = chords[index];
-    const safeBPM = bpmRef.current > 0 ? bpmRef.current : 60;
+    const safeBPM = Math.max(40, Math.min(180, parseInt(bpmRef.current) || 60));
     const currentBpmMs = 60000 / safeBPM;
     
     const notesInChord = c.notes.length;
@@ -263,10 +262,10 @@ useEffect(() => {
             </button>
             {/* ----------------------------------------------------------------- ADDED AL */}
             <div className="hp-bpm-wrapper">
-              <span className="hp-bpm-label">BPM</span>
-              <input 
-                type="number" 
-                value={BMP} 
+              <span className="hp-bpm-label" onClick={handleBpmClick}>BPM</span>
+              <input
+                type="number"
+                value={BMP}
                 onChange={handleBpmChange}
                 onBlur={handleBlur}
                 className="hp-bpm-input"
@@ -283,6 +282,11 @@ useEffect(() => {
               </svg>
             </button>
                         {/* ----------------------------------------------------------------- ADDED AL */}
+            <button onClick={() => {
+              cancelAll(); setPlayingProg(false);
+              onChords([]);
+              try { localStorage.removeItem("hp_saved_chords"); } catch(e){}
+            }} className="hp-btn-clear-saved">↺ Clear</button>
             <button onClick={playProgression}
               className={`hp-btn-play-prog ${playingProg ? "hp-btn-play-prog--playing" : "hp-btn-play-prog--idle"}`}>
               {playingProg?"◼ Stop":"▶▶ Play all"}
@@ -291,11 +295,7 @@ useEffect(() => {
         )}
 
 
-        <button onClick={() => {
-          cancelAll(); setPlayingProg(false);
-          onChords([]);
-          try { localStorage.removeItem("hp_saved_chords"); } catch(e){}
-        }} className="hp-btn-clear-saved">↺ Clear</button>
+        
       </div>
 
       {dragging != null && ghostPos && (

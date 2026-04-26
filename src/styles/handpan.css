@@ -69,7 +69,7 @@ g {
 
 .hp-logo {
   flex-shrink: 0;
-  transform-origin: center;
+  transform-origin: 60px center;
   will-change: transform;
 }
 
@@ -590,27 +590,46 @@ g {
   color: color-mix(in srgb, var(--accent) 33%, transparent);
 }
 
+/* CSS columns — sections fill top-to-bottom within each column,
+   no row-height gaps, no uneven stretching */
+.hp-cat-section-body {
+  column-width: 175px;
+  column-gap: 10px;
+}
+
 .hp-chord-type-section {
-  margin-bottom: 12px;
+  break-inside: avoid;
+  /* margin-bottom: 10px; */
+  display: block;
+}
+
+.hp-chord-type-section .hp-chord-grid {
+  grid-template-columns: 1fr;
+  gap: 4px;
 }
 
 .hp-chord-type-name {
+  display: none;
   font-size: 9.5px;
   letter-spacing: 2px;
   text-transform: uppercase;
   font-family: var(--font);
-  font-weight: 600;
+  font-weight: 700;
   margin-bottom: 5px;
   padding-left: 2px;
   color: color-mix(in srgb, var(--accent) 53%, transparent);
+  padding-top: 7px;
 }
 
 /* ── ChordCard ── */
 .hp-chord-card {
   border-radius: var(--radius-md);
-  padding: 8px 11px;
+  padding: 0;                  /* padding moved to __content and __cycle */
   cursor: pointer;
   transition: all .15s;
+  display: flex;               /* row: content left, cycle button right */
+  align-items: stretch;
+  overflow: hidden;
 }
 
 .hp-chord-card--default {
@@ -630,7 +649,6 @@ g {
 }
 
 .hp-chord-card--related {
-  /* dynamic border+shadow via --accent */
   background: color-mix(in srgb, var(--accent) 9%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 53%, transparent);
   box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 16%, transparent);
@@ -642,17 +660,55 @@ g {
   opacity: 0.35;
 }
 
-.hp-chord-card__top {
+/* Save (heart) button — full-height LEFT column */
+.hp-chord-card__save {
+  flex-shrink: 0;
+  width: 30px;
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 5px;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  border-right: 1px solid;
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
 }
 
-.hp-chord-card__title {
+.hp-chord-card__save--default {
+  border-color: rgba(255,255,255,0.06);
+  color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.hp-chord-card__save--default:hover {
+  background: color-mix(in srgb, #e05070 12%, transparent);
+  color: #e05070;
+  border-color: rgba(224,80,112,0.30);
+}
+
+.hp-chord-card__save--selected {
+  border-color: rgba(205,163,83,0.30);
+  color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.hp-chord-card__save--selected:hover {
+  background: color-mix(in srgb, #e05070 18%, transparent);
+  color: #e05070;
+}
+
+/* Content column — centered between the two side buttons */
+.hp-chord-card__content {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 8px;
+  text-align: center;
+}
+
+.hp-chord-card__top {
   display: flex;
   align-items: baseline;
+  justify-content: center;
   gap: 5px;
+  margin-bottom: 5px;
 }
 
 .hp-chord-card__root {
@@ -684,29 +740,46 @@ g {
   color: #806850;
 }
 
-.hp-chord-card__count-badge {
-  font-size: 8px;
-  border-radius: 3px;
-  padding: 1px 4px;
+/* Cycle button — full-height RIGHT column of the card */
+.hp-chord-card__cycle {
   flex-shrink: 0;
-  font-family: var(--font);
-  letter-spacing: 0.5px;
-  margin-left: 4px;
-  border: 1px solid color-mix(in srgb, var(--accent) 14%, transparent);
+  width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  border-left: 1px solid;      /* separator between content and button */
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
 
-.hp-chord-card__count-badge--selected {
-  color: color-mix(in srgb, var(--accent) 80%, transparent);
+.hp-chord-card__cycle--default {
+  border-color: rgba(255,255,255,0.06);
+  color: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
-.hp-chord-card__count-badge--default {
-  color: color-mix(in srgb, var(--accent) 40%, transparent);
+.hp-chord-card__cycle--default:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.hp-chord-card__cycle--selected {
+  border-color: rgba(205,163,83,0.30);
+  color: color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
+.hp-chord-card__cycle--selected:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
 }
 
 .hp-chord-card__notes {
   display: flex;
   gap: 2px;
   flex-wrap: wrap;
+  justify-content: center;
 }
 
 /* note chips inside chord card — use --note-color inline */
@@ -752,7 +825,7 @@ g {
   border-radius: 7px;
   padding: 4px 9px;
   cursor: grab;
-  font-size: 10px;
+  font-size: 13px;
   font-family: monospace;
   touch-action: none;
   transition: transform .1s, opacity .1s;
@@ -819,18 +892,24 @@ g {
 
 .hp-bpm-label {
   color: #a09070;
-  font-size: 8px; /* Slightly smaller to distinguish from value */
+  font-size: 13px;
   font-family: var(--font);
   text-transform: uppercase;
   opacity: 0.7;
   user-select: none;
+  cursor: pointer;
+  transition: opacity .15s;
+}
+
+.hp-bpm-label:hover {
+  opacity: 1;
 }
 
 .hp-bpm-input {
   background: transparent;
   border: none;
   color: #a09070; /* Matches your text color */
-  font-size: 9px;
+  font-size: 13px;
   font-family: var(--font);
   font-variant-numeric: tabular-nums;
   width: 22px; /* Tight fit for 3 digits */
@@ -861,12 +940,13 @@ g {
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
+  height: 24px;
 }
 
 .hp-metronome-btn.active {
   background: rgba(160, 144, 112, 0.2); /* Faint gold glow */
   border-color: #a09070;
-  color: #fff;
+  color: #c9a84c;
 }
 
 .hp-metronome-btn svg {
@@ -884,7 +964,7 @@ g {
   border-radius: var(--radius-sm);
   padding: 3px 9px;
   cursor: pointer;
-  font-size: 9px;
+  font-size: 13px;
   font-family: var(--font);
   flex-shrink: 0;
   touch-action: manipulation;
@@ -896,10 +976,11 @@ g {
   border-radius: var(--radius-sm);
   padding: 3px 10px;
   cursor: pointer;
-  font-size: 9px;
+  font-size: 13px;
   font-family: var(--font);
   flex-shrink: 0;
   touch-action: manipulation;
+  padding: 7px;
 }
 
 .hp-btn-play-prog--idle {
@@ -921,7 +1002,7 @@ g {
   border-radius: var(--radius-sm);
   padding: 3px 8px;
   cursor: pointer;
-  font-size: 9px;
+  font-size: 13px;
   font-family: var(--font);
   touch-action: manipulation;
 }
@@ -2078,6 +2159,23 @@ g {
 .hp-dropdown--w72  { width: 72px; }
 .hp-dropdown--flex { flex: 1; }
 
+/* ── Note glow — pure transition, no keyframe ─────────────────────
+   animation + transition on the same property is unreliable:
+   when the animation is cancelled browsers may snap before
+   the transition can fire. Pure transition works in both directions.
+   --lit added   → opacity 0 → 1 over 1s (fade in)
+   --lit removed → opacity 1 → 0 over 1s (fade out)
+──────────────────────────────────────────────────────────────────── */
+.hp-note-glow-circle {
+  opacity: 0;
+  transition: opacity 1s ease-out;
+  pointer-events: none;
+}
+
+.hp-note-glow-circle--lit {
+  opacity: 1;
+}
+
 /* ── SVG utilities ── */
 .hp-svg-note-group {
   cursor: pointer;
@@ -2109,6 +2207,63 @@ g {
   user-select: none;
   pointer-events: none;
   transition: fill .2s;
+}
+
+/* ── Layout symmetry & visual polish ── */
+
+/* Chord badge: vertically centered, slightly more weight */
+.hp-chord-badge {
+  align-items: center;
+}
+.hp-chord-badge__root {
+  font-size: 14px;
+}
+
+/* Category headers: dot replaced by a short left-bar for stronger alignment */
+.hp-cat-dot {
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+}
+
+/* Chord type sub-header: left-align with a subtle indent line */
+.hp-chord-type-name {
+  padding-left: 8px;
+  /* border-left: 2px solid color-mix(in srgb, var(--accent) 25%, transparent); */
+}
+
+.hp-chord-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(165px, 100%), 1fr));
+  gap: 6px;
+}
+
+/* Note chips: consistent cap height and letter spacing */
+.hp-chord-note-chip {
+  letter-spacing: 0.2px;
+  line-height: 1.7;
+}
+
+/* Filter bar: uniform button height */
+.hp-btn-filter,
+.hp-btn-strum,
+.hp-btn-play,
+.hp-btn-save-chord {
+  height: 34px;
+  box-sizing: border-box;
+}
+.hp-search-input {
+  height: 34px;
+  box-sizing: border-box;
+}
+
+/* Info row: center-align note chips row */
+.hp-active-notes-row {
+  justify-content: center;
+}
+
+/* Chord list section: consistent bottom spacing */
+.hp-chord-list {
+  padding-bottom: 80px;
 }
 
 /* ── Landscape layout (phone rotated / short viewport) ────────────

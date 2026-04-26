@@ -26,7 +26,7 @@ if (typeof document !== "undefined" && !document.querySelector("#hp-font")) {
   document.head.appendChild(l);
 }
 
-let TimeOutChord
+let ChordTimers = []
 
 export default function HandpanAtlas() {
   const [activeNotes,  setActiveNotes]  = useState([]);
@@ -41,9 +41,8 @@ export default function HandpanAtlas() {
     try { return JSON.parse(localStorage.getItem("hp_saved_chords") || "[]"); } catch(e) { return []; }
   });
 
-  function saveChord() {
-    const notes = activeNotes.length > 0 ? activeNotes : cardHighlightNotes;
-    if (notes.length === 0) return;
+  function saveChord(notes) {
+    if (!notes || notes.length === 0) return;
     const key = [...notes].sort().join("|");
     if (savedChords.some(c => c.key === key)) return;
     const newChords = [...savedChords, { key, notes:[...notes] }];
@@ -121,17 +120,50 @@ export default function HandpanAtlas() {
 
   const [cardHighlightNotes, setCardHighlightNotes] = useState([]);
 
-  const handleChordClick = chord => {
+  const handleChordClick = (chord, orderedNotes = null) => {
+    const notes = orderedNotes || chord.notes;
+    const strumMs = strum ? 260 : 0;
+
+    // Cancel every pending timer from the previous interaction
+    ChordTimers.forEach(clearTimeout);
+    ChordTimers = [];
     setSelectedKey(null);
     setCardHighlightNotes([]);
-    playChord(chord.notes, strum, currentPan.freq);
     setSelectedKey(chord.key);
-    setCardHighlightNotes(chord.notes);
-    clearTimeout(TimeOutChord)
-    TimeOutChord = setTimeout(()=>{
+
+    // ── Appear: each note plays + lights up at the same moment ──
+    const ctx = getCtx();
+    const now = ctx.currentTime;
+    const noteVol = Math.max(0.45, 0.80 - notes.length * 0.06);
+
+    notes.forEach((n, i) => {
+      const f = currentPan.freq?.[n];
+      if (f) synthNote(f, now + i * (strumMs / 1000), ctx, noteVol);
+      ChordTimers.push(setTimeout(() => {
+        setCardHighlightNotes(prev => [...prev, n]);
+      }, i * strumMs));
+    });
+
+    // ── Hold for 1s after the last note appears ──
+    const totalAppearMs = (notes.length - 1) * strumMs;
+    const holdMs = 1000;
+
+    // Deselect card when fade-out begins
+    ChordTimers.push(setTimeout(() => {
       setSelectedKey(null);
+    }, totalAppearMs + holdMs));
+
+    // ── Fade-out: remove notes one by one in the same order they appeared ──
+    notes.forEach((n, i) => {
+      ChordTimers.push(setTimeout(() => {
+        setCardHighlightNotes(prev => prev.filter(note => note !== n));
+      }, totalAppearMs + holdMs + i * strumMs));
+    });
+
+    // Final cleanup after the last CSS fade (1s) completes
+    ChordTimers.push(setTimeout(() => {
       setCardHighlightNotes([]);
-    }, 1000)
+    }, totalAppearMs + holdMs + (notes.length - 1) * strumMs + 1100));
   };
 
   const showAll    = () => { setPanFiltering(false); setSelectedKey(null); setCardHighlightNotes([]); };
@@ -387,12 +419,6 @@ export default function HandpanAtlas() {
               <span className="hp-btn-play__label">Play</span>
             </button>
 
-            <button
-              onClick={saveChord}
-              disabled={!hasActiveChord}
-              className={`hp-btn-save ${hasActiveChord ? "hp-btn-save--enabled" : "hp-btn-save--disabled"}`}>
-              <span>♡ Save</span>
-            </button>
           </div>
         </div>
 
@@ -404,7 +430,7 @@ export default function HandpanAtlas() {
                 const isSel = selectedKey === chord.key;
                 const isRel = !isSel && relatedKeys.has(chord.key);
                 const isDimmed = activeNotes.length > 0 && !isSel && !isRel;
-                return <ChordCard key={chord.key} chord={chord} isSelected={isSel} isRelated={isRel} dimmed={isDimmed} onClick={() => handleChordClick(chord)}/>;
+                return <ChordCard key={chord.key} chord={chord} isSelected={isSel} isRelated={isRel} dimmed={isDimmed} onClick={handleChordClick} onSave={saveChord}/>;
               })}
               {filtered.length === 0 && (
                 <div className="hp-chord-empty">
@@ -426,22 +452,24 @@ export default function HandpanAtlas() {
                       <span className="hp-cat-label">{s.label}</span>
                       <span className="hp-cat-count">({filtered.filter(c => c.cat===cat).length})</span>
                     </div>
+                    <div className="hp-cat-section-body">
                     {sortedNames.map(chordName => {
                       const cards = nameMap[chordName];
                       return (
                         <div key={chordName} className="hp-chord-type-section">
-                          <div className="hp-chord-type-name" style={{ "--accent": s.accent }}>{chordName}</div>
+                          <div className="hp-chord-type-name" style={{ "--accent": s.accent }}>&bull; {chordName}</div>
                           <div className="hp-chord-grid">
                             {cards.map(chord => {
                               const isSel = selectedKey === chord.key;
                               const isRel = !isSel && relatedKeys.has(chord.key) && activeNotes.length > 0;
                               const isDimmed = activeNotes.length > 0 && !panMode && !isSel && !isRel;
-                              return <ChordCard key={chord.key} chord={chord} isSelected={isSel} isRelated={isRel} dimmed={isDimmed} onClick={() => handleChordClick(chord)}/>;
+                              return <ChordCard key={chord.key} chord={chord} isSelected={isSel} isRelated={isRel} dimmed={isDimmed} onClick={handleChordClick} onSave={saveChord}/>;
                             })}
                           </div>
                         </div>
                       );
                     })}
+                    </div>
                   </div>
                 );
               })}

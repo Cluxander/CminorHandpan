@@ -142,8 +142,7 @@ export async function loadSlapBuffer() {
 
   const ctx = getCtx();
   try {
-    // We reuse your existing b64ToArrayBuffer helper
-    const arrayBuf = b64ToArrayBuffer(HP_SLAP);
+    const arrayBuf = b64ToArrayBuffer(HP_SLAP.SLAP_CUSTOM.b64);
     const audioBuf = await ctx.decodeAudioData(arrayBuf);
     _buffers[key] = audioBuf;
     return audioBuf;

@@ -8,7 +8,7 @@ export default function StickyHeader({ onHeight }) {
     const el = ref.current; if (!el) return;
 
     // Measure scroll range once — never read layout in the hot scroll path
-    const SCROLL_RANGE = el.getBoundingClientRect().height;
+    const SCROLL_RANGE = el.getBoundingClientRect().height*2.5;
 
     // Cache child refs once
     const logo  = el.querySelector(".hp-logo");

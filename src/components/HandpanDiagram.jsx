@@ -71,7 +71,9 @@ export default function HandpanDiagram({ activeNotes, onNoteToggle, notePosition
         const oct = n.name.match(/\d/)?.[0] || "";
         return (
           <g key={n.name} onClick={() => onNoteToggle(n.name)} className="hp-svg-note-group">
-            {lit && <circle cx={x} cy={y} r={r+13} fill={col+"18"} filter={`url(#hpGlow_${uniqueId})`}/>}
+            {/* Always rendered — CSS controls opacity so fade-out transition can fire */}
+            <circle cx={x} cy={y} r={r+13} fill={col+"18"} filter={`url(#hpGlow_${uniqueId})`}
+              className={`hp-note-glow-circle${lit ? " hp-note-glow-circle--lit" : ""}`}/>
             <circle cx={x} cy={y} r={r+2} fill="none"
               stroke={lit ? col+"55" : "rgba(180,140,55,0.15)"}
               strokeWidth={lit?1.5:1} className="hp-svg-circle--stroke-anim"/>
