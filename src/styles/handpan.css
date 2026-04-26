@@ -2115,7 +2115,8 @@ g {
    Triggers when height ≤ 600px and the screen is wider than it is tall.
    Left half: sticky header + handpan.  Right half: scrollable content.
 ──────────────────────────────────────────────────────────────────── */
-.hp-left-panel {
+.hp-left-panel,
+.hp-right-panel {
   display: contents;
 }
 @media (max-height: 600px) and (orientation: landscape) {
@@ -2193,6 +2194,7 @@ g {
 
   /* ── Right panel ── */
   .hp-right-panel {
+    display: block;   /* override display:contents from portrait */
     flex: 1;
     min-width: 0;
     height: 100dvh;

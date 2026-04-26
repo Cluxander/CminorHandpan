@@ -135,8 +135,6 @@ export function playChord(notes, strum = true, freqMap) {
   });
 }
 
-import { SAMPLE_DEFS, HP_SLAP } from "./samples.js";
-
 // Helper to ensure the slap is loaded into the _buffers cache
 export async function loadSlapBuffer() {
   const key = "SLAP_CUSTOM";
